@@ -1,8 +1,19 @@
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from app.db.session import SessionLocal, initialize_database
+from app.main import create_app
 from app.models.enums import SourceType
 from app.models.path_mapping import AllowedMediaRoot, PathMapping
 from app.services.path_mapping import map_remote_path, validate_allowed_media_root
+
+
+def clear_media_roots() -> None:
+    initialize_database()
+    with SessionLocal() as session:
+        session.query(AllowedMediaRoot).delete()
+        session.commit()
 
 
 def test_longest_prefix_mapping_wins() -> None:
@@ -64,3 +75,24 @@ def test_allowed_media_root_blocks_traversal(tmp_path: Path) -> None:
 
     assert validate_allowed_media_root(str(root / "Movie" / "file.mkv"), roots) is True
     assert validate_allowed_media_root(str(root / ".." / outside.name), roots) is False
+
+
+def test_create_media_root_is_idempotent_for_existing_path() -> None:
+    clear_media_roots()
+    with TestClient(create_app()) as client:
+        first_response = client.post(
+            "/api/v1/media-roots",
+            json={"path": "/movies", "enabled": True},
+        )
+        second_response = client.post(
+            "/api/v1/media-roots",
+            json={"path": "/movies", "enabled": False, "description": "Updated"},
+        )
+        list_response = client.get("/api/v1/media-roots")
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 200
+    assert second_response.json()["id"] == first_response.json()["id"]
+    assert second_response.json()["enabled"] is False
+    assert second_response.json()["description"] == "Updated"
+    assert len(list_response.json()) == 1

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
@@ -102,15 +103,41 @@ def list_media_roots(session: Session = Depends(get_session)) -> list[AllowedMed
 )
 def create_media_root(
     payload: AllowedMediaRootCreate,
+    response: Response,
     session: Session = Depends(get_session),
 ) -> AllowedMediaRootRead:
+    normalized_path = normalize_media_path(payload.path)
+    existing = session.scalar(
+        select(AllowedMediaRoot).where(AllowedMediaRoot.path == normalized_path)
+    )
+    if existing is not None:
+        existing.enabled = payload.enabled
+        existing.description = payload.description
+        session.commit()
+        session.refresh(existing)
+        response.status_code = status.HTTP_200_OK
+        return _serialize_root(existing)
+
     root = AllowedMediaRoot(
-        path=normalize_media_path(payload.path),
+        path=normalized_path,
         enabled=payload.enabled,
         description=payload.description,
     )
     session.add(root)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        existing = session.scalar(
+            select(AllowedMediaRoot).where(AllowedMediaRoot.path == normalized_path)
+        )
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Media root could not be saved because of a database conflict.",
+            ) from exc
+        response.status_code = status.HTTP_200_OK
+        return _serialize_root(existing)
     session.refresh(root)
     return _serialize_root(root)
 
@@ -128,7 +155,12 @@ def _serialize_root(root: AllowedMediaRoot) -> AllowedMediaRootRead:
     path = Path(root.path)
     return AllowedMediaRootRead.model_validate(
         {
-            **root.__dict__,
+            "id": root.id,
+            "path": root.path,
+            "enabled": root.enabled,
+            "description": root.description,
+            "created_at": root.created_at,
+            "updated_at": root.updated_at,
             "exists": path.exists(),
             "readable": path.exists() and path.is_dir(),
         }
