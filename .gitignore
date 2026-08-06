@@ -1,0 +1,46 @@
+# Environment and local configuration
+.env
+.env.local
+.env.*.local
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Runtime state
+/config/*
+!/config/.gitkeep
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.ffprobe.json
+
+# IDE and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

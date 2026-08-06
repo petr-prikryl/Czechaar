@@ -11,15 +11,15 @@
 
 ## Stage 1: Project Foundation
 
-- [ ] Backend skeleton
-- [ ] Frontend skeleton
-- [ ] SQLite configuration and SQLAlchemy base
-- [ ] Alembic setup
-- [ ] Health and readiness endpoints
-- [ ] Frontend shell and localization foundation
-- [ ] Test, lint and formatting infrastructure
-- [ ] Docker development setup
-- [ ] Initial documentation
+- [x] Backend skeleton
+- [x] Frontend skeleton
+- [x] SQLite configuration and SQLAlchemy base
+- [x] Alembic setup
+- [x] Health and readiness endpoints
+- [x] Frontend shell and localization foundation
+- [x] Test, lint and formatting infrastructure
+- [x] Docker development setup
+- [x] Initial documentation
 
 ## Stage 2: Integrations
 
