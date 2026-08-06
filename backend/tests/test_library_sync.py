@@ -53,6 +53,7 @@ async def test_radarr_sync_imports_movie_and_file() -> None:
             json=[
                 {
                     "id": 10,
+                    "tmdbId": 1273002,
                     "title": "Avatar",
                     "originalTitle": "Avatar",
                     "year": 2009,
@@ -86,6 +87,7 @@ async def test_radarr_sync_imports_movie_and_file() -> None:
         media_file = session.query(MediaFile).one()
         assert movie.media_type == MediaType.MOVIE
         assert movie.title == "Avatar"
+        assert movie.external_web_path == "/movie/1273002"
         assert media_file.quality == "Bluray-1080p"
         assert media_file.original_source_path.endswith("Avatar.mkv")
 

@@ -6,6 +6,7 @@ import re
 import shlex
 import unicodedata
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -504,7 +505,7 @@ def _serialize_items(session: Session, items: list[MediaItem]) -> list[MediaItem
 
 def _serialize_item(item: MediaItem, integration: Integration | None) -> MediaItemRead:
     media_file = _first_file(item)
-    external_web_path = item.external_web_path or _derived_item_web_path(item)
+    external_web_path = _item_external_web_path(item)
     return MediaItemRead.model_validate(
         {
             **item.__dict__,
@@ -610,6 +611,18 @@ def _integration_map(session: Session, items: list[MediaItem]) -> dict[int, Inte
     return {integration.id: integration for integration in session.scalars(statement)}
 
 
+def _item_external_web_path(item: MediaItem) -> str | None:
+    if item.media_type == MediaType.MOVIE and item.source_type == SourceType.RADARR:
+        if item.external_web_path and _is_numeric_movie_web_path(item.external_web_path):
+            return item.external_web_path
+        return _derived_item_web_path(item)
+    return item.external_web_path or _derived_item_web_path(item)
+
+
+def _is_numeric_movie_web_path(value: str) -> bool:
+    return re.fullmatch(r"/?movie/\d+/?", value.strip()) is not None
+
+
 def _source_web_url(base_url: str | None, external_web_path: str | None) -> str | None:
     if not base_url or not external_web_path:
         return None
@@ -618,8 +631,7 @@ def _source_web_url(base_url: str | None, external_web_path: str | None) -> str 
 
 def _derived_item_web_path(item: MediaItem) -> str | None:
     if item.media_type == MediaType.MOVIE:
-        title = f"{item.title} {item.year}" if item.year else item.title
-        return _derived_web_path("movie", title)
+        return _web_path("movie", item.external_item_id)
     if item.external_series_id or item.series_title:
         return _derived_series_web_path(item.series_title or item.title)
     return None
@@ -632,6 +644,13 @@ def _derived_series_web_path(title: str) -> str | None:
 def _derived_web_path(section: str, title: str) -> str | None:
     slug = _slugify(title)
     return f"/{section}/{slug}" if slug else None
+
+
+def _web_path(section: str, value: object) -> str | None:
+    text = str(value).strip()
+    if not text:
+        return None
+    return f"/{section}/{quote(text, safe='')}"
 
 
 def _slugify(value: str) -> str:

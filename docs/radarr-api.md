@@ -23,7 +23,9 @@ The API key is sent in the `X-Api-Key` header. It is never added to query string
 
 The client reads movies from `/api/v3/movie` and system status from `/api/v3/system/status` for connection tests.
 
-Movie synchronization stores Radarr movie IDs, movie-file IDs, title metadata, Radarr web path when the API provides a title slug, monitored state, file presence, source paths, relative paths, quality, quality profile, file size, status and poster metadata where available.
+Movie synchronization stores Radarr movie IDs, movie-file IDs, title metadata, a Radarr web path based on `tmdbId` when available, monitored state, file presence, source paths, relative paths, quality, quality profile, file size, status and poster metadata where available.
+
+Radarr browser links are generated as `/movie/<tmdbId>` when the API returns `tmdbId`, matching Radarr deployments that expose movie details such as `/movie/1273002`. If `tmdbId` is unavailable, Czecharr falls back to the Radarr movie ID rather than a title-based slug.
 
 ## Forbidden Operations
 

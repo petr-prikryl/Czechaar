@@ -35,7 +35,7 @@ const mediaPage = {
       upstream_status: "released",
       poster_url: null,
       stale: false,
-      source_web_url: "https://radarr.example.test/movie/avatar-2009",
+      source_web_url: "https://radarr.example.test/movie/1273002",
       media_file: {
         id: 2,
         external_file_id: "20",
@@ -297,7 +297,7 @@ describe("media pages", () => {
     expect(await screen.findByText("Avatar")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Radarr/ })).toHaveAttribute(
       "href",
-      "https://radarr.example.test/movie/avatar-2009",
+      "https://radarr.example.test/movie/1273002",
     );
     await userEvent.click(screen.getByRole("button", { name: /Ignorovat/ }));
 

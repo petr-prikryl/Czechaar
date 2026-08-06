@@ -159,7 +159,7 @@ class LibrarySyncService:
         )
         item.title = str(movie.get("title") or movie.get("originalTitle") or "Untitled movie")
         item.original_title = _optional_str(movie.get("originalTitle"))
-        item.external_web_path = _web_path("movie", movie.get("titleSlug"))
+        item.external_web_path = _radarr_movie_web_path(movie)
         item.year = _optional_int(movie.get("year"))
         item.monitored = bool(movie.get("monitored", True))
         item.file_presence = bool(movie.get("hasFile") or movie.get("movieFile"))
@@ -332,3 +332,7 @@ def _web_path(section: str, slug_value: Any) -> str | None:
     if slug is None:
         return None
     return f"/{section}/{quote(slug, safe='')}"
+
+
+def _radarr_movie_web_path(movie: dict[str, Any]) -> str | None:
+    return _web_path("movie", movie.get("tmdbId") or movie.get("id"))
