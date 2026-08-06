@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from app.db.session import SessionLocal, initialize_database
 from app.models.enums import ScanRunStatus, ScanType, SourceType
 from app.models.integration import Integration
@@ -61,6 +63,31 @@ def test_scan_creation_persists_run_and_items() -> None:
         assert file_ids == [media_file_id]
         assert force is True
         assert session.query(ScanRunItem).count() == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_scan_finishes_with_no_media_diagnostic() -> None:
+    reset_scans()
+
+    with SessionLocal() as session:
+        run, file_ids, force = ScanEngine(session).create_scan(
+            ScanStartRequest(scan_type=ScanType.FULL),
+            force=False,
+        )
+
+    assert file_ids == []
+    assert force is False
+
+    await scan_runner.run(run.id, file_ids, force=force)
+
+    with SessionLocal() as session:
+        refreshed = session.get(ScanRun, run.id)
+        assert refreshed is not None
+        assert refreshed.status == ScanRunStatus.COMPLETED
+        assert refreshed.requested_item_count == 0
+        assert refreshed.completed_item_count == 0
+        assert refreshed.current_status == "no_media_files"
+        assert refreshed.finished_at is not None
 
 
 def test_scan_cancellation_sets_persistent_flag() -> None:

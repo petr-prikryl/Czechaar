@@ -123,6 +123,11 @@ class ScanRunner:
         cancel_event = self._cancel_events.setdefault(run_id, asyncio.Event())
         self._mark_run_started(run_id)
 
+        if not file_ids:
+            self._finish_run(run_id)
+            self._cancel_events.pop(run_id, None)
+            return
+
         async def process(file_id: int) -> None:
             async with semaphore:
                 if cancel_event.is_set() or self._cancellation_requested(run_id):
@@ -238,6 +243,9 @@ class ScanRunner:
             if run.cancellation_requested:
                 run.status = ScanRunStatus.CANCELLED
                 run.current_status = "cancelled"
+            elif run.requested_item_count == 0:
+                run.status = ScanRunStatus.COMPLETED
+                run.current_status = "no_media_files"
             elif run.error_count > 0:
                 run.status = ScanRunStatus.FAILED
                 run.current_status = "completed with errors"

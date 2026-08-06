@@ -8,6 +8,7 @@ import { MissingAudioPage } from "../src/pages/MissingAudioPage";
 import { MoviesPage } from "../src/pages/MoviesPage";
 import { ScanHistoryPage } from "../src/pages/ScanHistoryPage";
 import { SeriesPage } from "../src/pages/SeriesPage";
+import type { ScanRun } from "../src/api/scans";
 import { I18nProvider } from "../src/i18n/I18nProvider";
 
 const mediaPage = {
@@ -82,7 +83,29 @@ function renderPage(page: React.ReactElement) {
   );
 }
 
-function mockApi() {
+const defaultScanHistory: ScanRun[] = [
+  {
+    id: 3,
+    scan_type: "full",
+    source_type: null,
+    integration_id: null,
+    status: "running",
+    requested_item_count: 10,
+    completed_item_count: 4,
+    success_count: 2,
+    missing_czech_count: 1,
+    cache_hit_count: 1,
+    error_count: 0,
+    cancellation_requested: false,
+    current_status: "scanned 4/10",
+    error_summary: null,
+    started_at: "2026-08-06T10:00:00Z",
+    finished_at: null,
+    created_at: "2026-08-06T10:00:00Z",
+  },
+];
+
+function mockApi(scanHistory = defaultScanHistory) {
   return vi.spyOn(window, "fetch").mockImplementation((input) => {
     const url =
       typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -139,29 +162,23 @@ function mockApi() {
       return Promise.resolve(new Response(JSON.stringify(episodePage), { status: 200 }));
     }
     if (url.startsWith("/api/v1/scans/history")) {
+      return Promise.resolve(new Response(JSON.stringify(scanHistory), { status: 200 }));
+    }
+    if (url.startsWith("/api/v1/sync/library")) {
       return Promise.resolve(
         new Response(
-          JSON.stringify([
-            {
-              id: 3,
-              scan_type: "full",
-              source_type: null,
-              integration_id: null,
-              status: "running",
-              requested_item_count: 10,
-              completed_item_count: 4,
-              success_count: 2,
-              missing_czech_count: 1,
-              cache_hit_count: 1,
-              error_count: 0,
-              cancellation_requested: false,
-              current_status: "scanned 4/10",
-              error_summary: null,
-              started_at: "2026-08-06T10:00:00Z",
-              finished_at: null,
-              created_at: "2026-08-06T10:00:00Z",
-            },
-          ]),
+          JSON.stringify({
+            id: 4,
+            source_type: null,
+            integration_id: null,
+            status: "completed",
+            started_at: "2026-08-06T10:01:00Z",
+            finished_at: "2026-08-06T10:01:05Z",
+            items_total: 3,
+            files_total: 2,
+            stale_count: 0,
+            error_message: null,
+          }),
           { status: 200 },
         ),
       );
@@ -227,5 +244,38 @@ describe("media pages", () => {
 
     expect(await screen.findByText("4/10")).toBeInTheDocument();
     expect(screen.getByText("running")).toBeInTheDocument();
+  });
+
+  it("starts library synchronization from scan history", async () => {
+    const fetchMock = mockApi();
+    renderPage(<ScanHistoryPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Synchronizovat knihovnu/ }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/sync/library",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(await screen.findByText(/Synchronizace dokončena:/)).toBeInTheDocument();
+  });
+
+  it("explains empty scan runs", async () => {
+    mockApi([
+      {
+        ...defaultScanHistory[0],
+        id: 4,
+        status: "completed",
+        requested_item_count: 0,
+        completed_item_count: 0,
+        current_status: "no_media_files",
+        finished_at: "2026-08-06T10:01:00Z",
+      },
+    ]);
+    renderPage(<ScanHistoryPage />);
+
+    expect(await screen.findByText("Žádné soubory ke skenování")).toBeInTheDocument();
+    expect(screen.getByText(/Poslední sken nenašel žádné soubory/)).toBeInTheDocument();
   });
 });

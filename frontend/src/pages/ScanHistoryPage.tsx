@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, Square } from "lucide-react";
+import { Play, RefreshCw, Square } from "lucide-react";
 
 import { cancelScan, getScanHistory, startFullScan } from "../api/scans";
+import { syncLibrary } from "../api/sync";
 import { StatusBadge } from "../components/StatusBadge";
 import { Button } from "../components/ui/Button";
 import { useI18n } from "../i18n/I18nProvider";
@@ -15,9 +16,22 @@ export function ScanHistoryPage() {
     queryFn: ({ signal }) => getScanHistory(signal),
     refetchInterval: 5000,
   });
+  const latestScan = historyQuery.data?.[0];
+  const emptyLatestScan = latestScan?.requested_item_count === 0;
   const startMutation = useMutation({
     mutationFn: () => startFullScan(false),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["scan-history"] }),
+  });
+  const syncMutation = useMutation({
+    mutationFn: syncLibrary,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["scan-history"] });
+      void queryClient.invalidateQueries({ queryKey: ["movies"] });
+      void queryClient.invalidateQueries({ queryKey: ["series"] });
+      void queryClient.invalidateQueries({ queryKey: ["episodes"] });
+      void queryClient.invalidateQueries({ queryKey: ["missing-audio"] });
+    },
   });
   const cancelMutation = useMutation({
     mutationFn: cancelScan,
@@ -30,12 +44,36 @@ export function ScanHistoryPage() {
         <h1 className="text-2xl font-semibold tracking-normal">{t("history.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t("history.subtitle")}</p>
       </div>
-      <div className="flex gap-2">
-        <Button onClick={() => startMutation.mutate()}>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
+          <RefreshCw aria-hidden="true" size={16} />
+          {t("actions.syncLibrary")}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => startMutation.mutate()}
+          disabled={startMutation.isPending}
+        >
           <Play aria-hidden="true" size={16} />
           {t("actions.startScan")}
         </Button>
       </div>
+      {emptyLatestScan ? (
+        <div className="rounded-lg border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+          {t("history.emptyScanHint")}
+        </div>
+      ) : null}
+      {syncMutation.data ? (
+        <div className="rounded-lg border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+          {t("history.syncCompleted")} {syncMutation.data.files_total.toLocaleString()}{" "}
+          {t("history.files")}
+        </div>
+      ) : null}
+      {startMutation.isError || syncMutation.isError ? (
+        <div role="alert" className="rounded-lg border border-destructive px-4 py-3 text-sm">
+          {t("history.actionFailed")}
+        </div>
+      ) : null}
       <div className="overflow-x-auto rounded-lg border border-border bg-background">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-muted text-muted-foreground">
@@ -59,7 +97,9 @@ export function ScanHistoryPage() {
                   <StatusBadge status={scan.status} />
                 </td>
                 <td className="px-3 py-2">
-                  {scan.completed_item_count}/{scan.requested_item_count}
+                  {scan.requested_item_count === 0
+                    ? t("history.noFilesToScan")
+                    : `${scan.completed_item_count}/${scan.requested_item_count}`}
                 </td>
                 <td className="px-3 py-2">{scan.cache_hit_count}</td>
                 <td className="px-3 py-2">{scan.error_count}</td>
