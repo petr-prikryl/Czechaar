@@ -1,0 +1,28 @@
+services:
+  czecharr:
+    build:
+      context: .
+    container_name: czecharr
+    environment:
+      TZ: Europe/Prague
+      CZECHARR_CONFIG_DIR: /config
+      CZECHARR_DATABASE_URL: sqlite:////config/czecharr.db
+      CZECHARR_HOST: 0.0.0.0
+      CZECHARR_PORT: 8080
+      CZECHARR_LOG_LEVEL: INFO
+      CZECHARR_FFPROBE_PATH: ffprobe
+      CZECHARR_FFPROBE_TIMEOUT: 60
+      CZECHARR_SCAN_CONCURRENCY: 2
+    volumes:
+      - ./config:/config
+      - /mnt/media/movies:/movies:ro
+      - /mnt/media/tv:/tv:ro
+    ports:
+      - "8787:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

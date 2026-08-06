@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     scheduled_scan_enabled: bool = False
     scheduled_scan_interval_minutes: int = 1440
     demo_mode: bool = False
+    static_dir: Path | None = None
     timezone: str = Field(
         default="Europe/Prague", validation_alias=AliasChoices("TZ", "CZECHARR_TIMEZONE")
     )

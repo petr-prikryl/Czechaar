@@ -76,13 +76,13 @@
 
 ## Stage 7: Production Docker Deployment
 
-- [ ] Multi-stage Dockerfile
-- [ ] Runtime ffmpeg/ffprobe
-- [ ] Startup migrations
-- [ ] Non-root runtime
-- [ ] Docker Compose files
-- [ ] Healthcheck
-- [ ] Reverse-proxy examples
+- [x] Multi-stage Dockerfile
+- [x] Runtime ffmpeg/ffprobe
+- [x] Startup migrations
+- [x] Non-root runtime
+- [x] Docker Compose files
+- [x] Healthcheck
+- [x] Reverse-proxy examples
 
 ## Stage 8: Final Hardening
 
