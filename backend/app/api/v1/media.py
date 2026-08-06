@@ -139,7 +139,8 @@ async def probe_media_file(
     session: Session = Depends(get_session),
 ) -> MediaFile:
     try:
-        return await MediaAnalysisService(session).analyze_media_file(media_file_id)
+        outcome = await MediaAnalysisService(session).analyze_media_file(media_file_id, force=True)
+        return outcome.media_file
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 

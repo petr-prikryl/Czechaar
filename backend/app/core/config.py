@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     ffprobe_path: str = "ffprobe"
     ffprobe_timeout: int = 60
     scan_concurrency: int = 2
+    scheduled_scan_enabled: bool = False
+    scheduled_scan_interval_minutes: int = 1440
     demo_mode: bool = False
     timezone: str = Field(
         default="Europe/Prague", validation_alias=AliasChoices("TZ", "CZECHARR_TIMEZONE")

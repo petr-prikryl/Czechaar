@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,14 +13,26 @@ from app.models.enums import ScanState, SourceType
 from app.models.media import MediaFile
 from app.models.path_mapping import AllowedMediaRoot, PathMapping
 from app.services.ffprobe import FFPROBE_ANALYZER_VERSION, FfprobeRunner
+from app.services.fingerprint import calculate_fingerprint
 from app.services.path_mapping import map_remote_path, validate_allowed_media_root
+
+
+@dataclass(slots=True)
+class AnalysisOutcome:
+    media_file: MediaFile
+    cache_hit: bool
 
 
 class MediaAnalysisService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    async def analyze_media_file(self, media_file_id: int) -> MediaFile:
+    async def analyze_media_file(
+        self,
+        media_file_id: int,
+        *,
+        force: bool = False,
+    ) -> AnalysisOutcome:
         media_file = self.session.get(MediaFile, media_file_id)
         if media_file is None:
             raise ValueError("Media file not found.")
@@ -66,6 +79,19 @@ class MediaAnalysisService:
                 "Path is not a file.",
             )
 
+        fingerprint = calculate_fingerprint(local_path)
+        if (
+            not force
+            and media_file.fingerprint == fingerprint.value
+            and media_file.analyzer_version == FFPROBE_ANALYZER_VERSION
+            and media_file.scan_state
+            in {ScanState.CZECH_AUDIO_FOUND, ScanState.CZECH_AUDIO_MISSING}
+        ):
+            self.session.add(media_file)
+            self.session.commit()
+            self.session.refresh(media_file)
+            return AnalysisOutcome(media_file=media_file, cache_hit=True)
+
         settings = get_settings()
         runner = FfprobeRunner(settings.ffprobe_path, settings.ffprobe_timeout)
         result = await runner.inspect_audio_streams(local_path)
@@ -92,8 +118,15 @@ class MediaAnalysisService:
             )
 
         media_file.scan_state = result.state
-        media_file.czech_audio_result = result.state == ScanState.CZECH_AUDIO_FOUND
+        media_file.czech_audio_result = (
+            result.state == ScanState.CZECH_AUDIO_FOUND
+            if result.state in {ScanState.CZECH_AUDIO_FOUND, ScanState.CZECH_AUDIO_MISSING}
+            else None
+        )
         media_file.analyzer_version = FFPROBE_ANALYZER_VERSION
+        media_file.fingerprint = fingerprint.value
+        media_file.size = fingerprint.size
+        media_file.modified_time = fingerprint.modified_time
         media_file.error_code = None if result.error_message is None else result.state.value
         media_file.sanitized_error_message = result.error_message
         if result.state in {ScanState.CZECH_AUDIO_FOUND, ScanState.CZECH_AUDIO_MISSING}:
@@ -101,14 +134,14 @@ class MediaAnalysisService:
         self.session.add(media_file)
         self.session.commit()
         self.session.refresh(media_file)
-        return media_file
+        return AnalysisOutcome(media_file=media_file, cache_hit=False)
 
     def _finish_with_error(
         self,
         media_file: MediaFile,
         state: ScanState,
         message: str,
-    ) -> MediaFile:
+    ) -> AnalysisOutcome:
         media_file.scan_state = state
         media_file.czech_audio_result = None
         media_file.error_code = state.value
@@ -116,4 +149,4 @@ class MediaAnalysisService:
         self.session.add(media_file)
         self.session.commit()
         self.session.refresh(media_file)
-        return media_file
+        return AnalysisOutcome(media_file=media_file, cache_hit=False)

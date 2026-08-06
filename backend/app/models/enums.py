@@ -35,6 +35,34 @@ class SyncStatus(StrEnum):
     FAILED = "failed"
 
 
+class ScanRunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
+class ScanType(StrEnum):
+    FULL = "full"
+    RADARR = "radarr"
+    SONARR = "sonarr"
+    INTEGRATION = "integration"
+    MEDIA_FILE = "media_file"
+    MOVIE = "movie"
+    SERIES = "series"
+    SEASON = "season"
+    EPISODE = "episode"
+    SCHEDULED = "scheduled"
+
+
+class IgnoredObjectType(StrEnum):
+    MEDIA_ITEM = "media_item"
+    MEDIA_FILE = "media_file"
+
+
 class CzechMatchReason(StrEnum):
     LANGUAGE_CODE = "language_code"
     STREAM_TITLE = "stream_title"

@@ -53,14 +53,14 @@
 
 ## Stage 5: Scan Engine
 
-- [ ] Persistent scan runs
-- [ ] Bounded concurrency
-- [ ] Progress and history
-- [ ] Cancellation
-- [ ] Cache and fingerprinting
-- [ ] Restart recovery
-- [ ] Scheduled scans
-- [ ] Tests
+- [x] Persistent scan runs
+- [x] Bounded concurrency
+- [x] Progress and history
+- [x] Cancellation
+- [x] Cache and fingerprinting
+- [x] Restart recovery
+- [x] Scheduled scans
+- [x] Tests
 
 ## Stage 6: Main Web Interface
 
