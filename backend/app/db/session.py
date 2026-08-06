@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -28,6 +28,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 def initialize_database() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_compatibility_schema()
 
 
 def check_database() -> bool:
@@ -42,3 +43,35 @@ def get_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def _ensure_sqlite_compatibility_schema() -> None:
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        tables = set(inspector.get_table_names())
+        if "integrations" in tables:
+            columns = {column["name"] for column in inspector.get_columns("integrations")}
+            if "web_url" not in columns:
+                connection.execute(text("ALTER TABLE integrations ADD COLUMN web_url VARCHAR(500)"))
+        if "media_items" in tables:
+            columns = {column["name"] for column in inspector.get_columns("media_items")}
+            if "external_web_path" not in columns:
+                connection.execute(
+                    text("ALTER TABLE media_items ADD COLUMN external_web_path VARCHAR(500)")
+                )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_media_items_series_season "
+                    "ON media_items (integration_id, external_series_id, season_number)"
+                )
+            )
+        if "media_files" in tables:
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_media_files_missing_listing "
+                    "ON media_files (scan_state, stale, integration_id)"
+                )
+            )

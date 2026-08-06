@@ -36,6 +36,7 @@ def create_integration(
         source_type=payload.source_type,
         name=payload.name.strip(),
         base_url=payload.base_url,
+        web_url=payload.web_url,
         api_key=payload.api_key or None,
         api_key_env_var=payload.api_key_env_var,
         enabled=payload.enabled,

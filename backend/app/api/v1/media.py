@@ -5,16 +5,23 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import Select, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_session
 from app.models.audio import AudioStream
 from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
 from app.models.ignored import IgnoredItem
+from app.models.integration import Integration
 from app.models.media import MediaFile, MediaItem, MediaItemFileLink
 from app.repositories.media import MediaRepository
-from app.schemas.media import MediaFileSummary, MediaItemPage, MediaItemRead, SeriesSummary
+from app.schemas.media import (
+    MediaFileSummary,
+    MediaItemPage,
+    MediaItemRead,
+    SeasonSummary,
+    SeriesSummary,
+)
 from app.services.media_analysis import MediaAnalysisService
 
 router = APIRouter(tags=["media"])
@@ -98,45 +105,128 @@ def list_episodes(
 
 @router.get("/series", response_model=list[SeriesSummary])
 def list_series(session: Session = Depends(get_session)) -> list[SeriesSummary]:
-    statement = select(MediaItem).where(MediaItem.media_type == MediaType.EPISODE)
-    episodes = list(session.scalars(statement))
-    grouped: dict[tuple[int, str], list[MediaItem]] = {}
-    for episode in episodes:
-        if episode.external_series_id is None:
-            continue
-        grouped.setdefault((episode.integration_id, episode.external_series_id), []).append(episode)
-
-    summaries: list[SeriesSummary] = []
-    for (integration_id, external_series_id), grouped_episodes in grouped.items():
-        files_scanned = 0
-        missing = 0
-        errors = 0
-        for episode in grouped_episodes:
-            first_file = _first_file(episode)
-            if first_file is None:
-                continue
-            if first_file.last_scan_attempt is not None:
-                files_scanned += 1
-            if first_file.scan_state == ScanState.CZECH_AUDIO_MISSING:
-                missing += 1
-            if first_file.error_code:
-                errors += 1
-        first_episode = grouped_episodes[0]
-        summaries.append(
-            SeriesSummary(
-                external_series_id=external_series_id,
-                title=first_episode.series_title or first_episode.title,
-                integration_id=integration_id,
-                monitored=any(episode.monitored for episode in grouped_episodes),
-                episode_count=len(grouped_episodes),
-                files_scanned=files_scanned,
-                episodes_missing_czech_audio=missing,
-                errors=errors,
-                poster_url=first_episode.poster_url,
-                stale=all(episode.stale for episode in grouped_episodes),
-            )
+    title_expression = func.coalesce(func.max(MediaItem.series_title), func.max(MediaItem.title))
+    statement = (
+        select(
+            MediaItem.integration_id.label("integration_id"),
+            MediaItem.external_series_id.label("external_series_id"),
+            title_expression.label("title"),
+            func.max(case((MediaItem.monitored.is_(True), 1), else_=0)).label("monitored"),
+            func.count(func.distinct(MediaItem.id)).label("episode_count"),
+            func.count(
+                func.distinct(
+                    case((MediaFile.last_scan_attempt.is_not(None), MediaFile.id), else_=None)
+                )
+            ).label("files_scanned"),
+            func.count(
+                func.distinct(
+                    case(
+                        (
+                            MediaFile.scan_state == ScanState.CZECH_AUDIO_MISSING,
+                            MediaItem.id,
+                        ),
+                        else_=None,
+                    )
+                )
+            ).label("episodes_missing_czech_audio"),
+            func.count(
+                func.distinct(case((MediaFile.error_code.is_not(None), MediaItem.id), else_=None))
+            ).label("errors"),
+            func.max(MediaItem.poster_url).label("poster_url"),
+            func.min(case((MediaItem.stale.is_(True), 1), else_=0)).label("stale"),
+            func.max(MediaItem.external_web_path).label("external_web_path"),
+            Integration.base_url.label("base_url"),
+            Integration.web_url.label("web_url"),
         )
-    return sorted(summaries, key=lambda item: item.title.lower())
+        .join(Integration, Integration.id == MediaItem.integration_id)
+        .outerjoin(MediaItemFileLink, MediaItemFileLink.media_item_id == MediaItem.id)
+        .outerjoin(MediaFile, MediaFile.id == MediaItemFileLink.media_file_id)
+        .where(MediaItem.media_type == MediaType.EPISODE)
+        .where(MediaItem.external_series_id.is_not(None))
+        .group_by(
+            MediaItem.integration_id,
+            MediaItem.external_series_id,
+            Integration.base_url,
+            Integration.web_url,
+        )
+        .order_by(func.lower(title_expression))
+    )
+
+    return [
+        SeriesSummary(
+            external_series_id=str(row.external_series_id),
+            title=str(row.title or "Untitled series"),
+            integration_id=int(row.integration_id),
+            monitored=bool(row.monitored),
+            episode_count=int(row.episode_count or 0),
+            files_scanned=int(row.files_scanned or 0),
+            episodes_missing_czech_audio=int(row.episodes_missing_czech_audio or 0),
+            errors=int(row.errors or 0),
+            poster_url=row.poster_url,
+            stale=bool(row.stale),
+            source_web_url=_source_web_url(row.web_url or row.base_url, row.external_web_path),
+        )
+        for row in session.execute(statement)
+    ]
+
+
+@router.get(
+    "/series/{integration_id}/{external_series_id}/seasons", response_model=list[SeasonSummary]
+)
+def list_series_seasons(
+    integration_id: int,
+    external_series_id: str,
+    session: Session = Depends(get_session),
+) -> list[SeasonSummary]:
+    statement = (
+        select(
+            MediaItem.integration_id.label("integration_id"),
+            MediaItem.external_series_id.label("external_series_id"),
+            MediaItem.season_number.label("season_number"),
+            func.count(func.distinct(MediaItem.id)).label("episode_count"),
+            func.count(
+                func.distinct(
+                    case((MediaFile.last_scan_attempt.is_not(None), MediaFile.id), else_=None)
+                )
+            ).label("files_scanned"),
+            func.count(
+                func.distinct(
+                    case(
+                        (
+                            MediaFile.scan_state == ScanState.CZECH_AUDIO_MISSING,
+                            MediaItem.id,
+                        ),
+                        else_=None,
+                    )
+                )
+            ).label("episodes_missing_czech_audio"),
+            func.count(
+                func.distinct(case((MediaFile.error_code.is_not(None), MediaItem.id), else_=None))
+            ).label("errors"),
+            func.min(case((MediaItem.stale.is_(True), 1), else_=0)).label("stale"),
+        )
+        .outerjoin(MediaItemFileLink, MediaItemFileLink.media_item_id == MediaItem.id)
+        .outerjoin(MediaFile, MediaFile.id == MediaItemFileLink.media_file_id)
+        .where(MediaItem.media_type == MediaType.EPISODE)
+        .where(MediaItem.integration_id == integration_id)
+        .where(MediaItem.external_series_id == external_series_id)
+        .group_by(MediaItem.integration_id, MediaItem.external_series_id, MediaItem.season_number)
+        .order_by(MediaItem.season_number)
+    )
+
+    return [
+        SeasonSummary(
+            integration_id=int(row.integration_id),
+            external_series_id=str(row.external_series_id),
+            season_number=row.season_number,
+            episode_count=int(row.episode_count or 0),
+            files_scanned=int(row.files_scanned or 0),
+            episodes_missing_czech_audio=int(row.episodes_missing_czech_audio or 0),
+            errors=int(row.errors or 0),
+            stale=bool(row.stale),
+        )
+        for row in session.execute(statement)
+    ]
 
 
 @router.get("/missing", response_model=MediaItemPage)
@@ -147,13 +237,18 @@ def list_missing_czech_audio(
     search: str | None = None,
     include_ignored: bool = False,
 ) -> MediaItemPage:
-    items = _missing_items(session, search=search, include_ignored=include_ignored)
-    offset = (page - 1) * page_size
-    return MediaItemPage(
-        items=[_serialize_item(item) for item in items[offset : offset + page_size]],
+    items, total = _missing_items(
+        session,
+        search=search,
+        include_ignored=include_ignored,
         page=page,
         page_size=page_size,
-        total=len(items),
+    )
+    return MediaItemPage(
+        items=_serialize_items(session, items),
+        page=page,
+        page_size=page_size,
+        total=total,
     )
 
 
@@ -183,7 +278,14 @@ def export_missing_czech_audio(
             "last scan",
         ]
     )
-    for item in _missing_items(session, search=search, include_ignored=include_ignored):
+    items, _ = _missing_items(
+        session,
+        search=search,
+        include_ignored=include_ignored,
+        page=None,
+        page_size=None,
+    )
+    for item in items:
         media_file = _first_file(item)
         languages = _audio_languages(session, media_file.id) if media_file else ""
         writer.writerow(
@@ -329,18 +431,27 @@ def _list_items(
 
     items, total = MediaRepository(session).paged_items(statement, page=page, page_size=page_size)
     return MediaItemPage(
-        items=[_serialize_item(item) for item in items],
+        items=_serialize_items(session, items),
         page=page,
         page_size=page_size,
         total=total,
     )
 
 
-def _serialize_item(item: MediaItem) -> MediaItemRead:
+def _serialize_items(session: Session, items: list[MediaItem]) -> list[MediaItemRead]:
+    integrations = _integration_map(session, items)
+    return [_serialize_item(item, integrations.get(item.integration_id)) for item in items]
+
+
+def _serialize_item(item: MediaItem, integration: Integration | None) -> MediaItemRead:
     media_file = _first_file(item)
     return MediaItemRead.model_validate(
         {
             **item.__dict__,
+            "source_web_url": _source_web_url(
+                integration.web_url or integration.base_url if integration else None,
+                item.external_web_path,
+            ),
             "media_file": (
                 MediaFileSummary.model_validate(media_file, from_attributes=True)
                 if media_file
@@ -361,46 +472,90 @@ def _missing_items(
     *,
     search: str | None,
     include_ignored: bool,
-) -> list[MediaItem]:
-    ignored_item_ids = set()
-    ignored_file_ids = set()
+    page: int | None,
+    page_size: int | None,
+) -> tuple[list[MediaItem], int]:
+    id_statement = _missing_item_ids_statement(
+        search=search,
+        include_ignored=include_ignored,
+    )
+    total = (
+        session.scalar(select(func.count()).select_from(id_statement.order_by(None).subquery()))
+        or 0
+    )
+    if page is not None and page_size is not None:
+        id_statement = id_statement.offset((page - 1) * page_size).limit(page_size)
+
+    item_ids = list(session.scalars(id_statement))
+    if not item_ids:
+        return [], int(total)
+
+    items_statement = (
+        select(MediaItem)
+        .where(MediaItem.id.in_(item_ids))
+        .options(selectinload(MediaItem.file_links).selectinload(MediaItemFileLink.media_file))
+    )
+    items_by_id = {item.id: item for item in session.scalars(items_statement)}
+    return [items_by_id[item_id] for item_id in item_ids if item_id in items_by_id], int(total)
+
+
+def _missing_item_ids_statement(
+    *,
+    search: str | None,
+    include_ignored: bool,
+) -> Select[tuple[int]]:
+    statement: Select[tuple[int]] = (
+        select(MediaItem.id)
+        .join(MediaItemFileLink, MediaItemFileLink.media_item_id == MediaItem.id)
+        .join(MediaFile, MediaFile.id == MediaItemFileLink.media_file_id)
+        .where(MediaItem.stale.is_(False))
+        .where(MediaFile.stale.is_(False))
+        .where(MediaFile.scan_state == ScanState.CZECH_AUDIO_MISSING)
+        .group_by(MediaItem.id)
+        .order_by(
+            func.lower(func.coalesce(MediaItem.series_title, MediaItem.title)),
+            MediaItem.season_number,
+            MediaItem.episode_number,
+            MediaItem.id,
+        )
+    )
     if not include_ignored:
-        ignored_item_ids = {
-            item.object_id
-            for item in session.scalars(
-                select(IgnoredItem).where(IgnoredItem.object_type == IgnoredObjectType.MEDIA_ITEM)
+        ignored_item_ids = select(IgnoredItem.object_id).where(
+            IgnoredItem.object_type == IgnoredObjectType.MEDIA_ITEM
+        )
+        ignored_file_ids = select(IgnoredItem.object_id).where(
+            IgnoredItem.object_type == IgnoredObjectType.MEDIA_FILE
+        )
+        statement = statement.where(MediaItem.id.not_in(ignored_item_ids)).where(
+            MediaFile.id.not_in(ignored_file_ids)
+        )
+    if search:
+        search_pattern = f"%{search.strip()}%"
+        statement = statement.where(
+            or_(
+                MediaItem.title.ilike(search_pattern),
+                MediaItem.original_title.ilike(search_pattern),
+                MediaItem.series_title.ilike(search_pattern),
+                MediaFile.quality.ilike(search_pattern),
             )
-        }
-        ignored_file_ids = {
-            item.object_id
-            for item in session.scalars(
-                select(IgnoredItem).where(IgnoredItem.object_type == IgnoredObjectType.MEDIA_FILE)
-            )
-        }
-    statement = select(MediaItem).where(MediaItem.stale.is_(False)).order_by(MediaItem.title)
-    items = list(session.scalars(statement))
-    normalized_search = search.casefold().strip() if search else None
-    result: list[MediaItem] = []
-    for item in items:
-        media_file = _first_file(item)
-        if media_file is None or media_file.scan_state != ScanState.CZECH_AUDIO_MISSING:
-            continue
-        if item.id in ignored_item_ids or media_file.id in ignored_file_ids:
-            continue
-        if normalized_search:
-            haystack = " ".join(
-                value or ""
-                for value in [
-                    item.title,
-                    item.original_title,
-                    item.series_title,
-                    media_file.quality,
-                ]
-            ).casefold()
-            if normalized_search not in haystack:
-                continue
-        result.append(item)
-    return result
+        )
+    return statement
+
+
+def _integration_map(session: Session, items: list[MediaItem]) -> dict[int, Integration]:
+    integration_ids = {item.integration_id for item in items}
+    if not integration_ids:
+        return {}
+    statement = select(Integration).where(Integration.id.in_(integration_ids))
+    return {integration.id: integration for integration in session.scalars(statement)}
+
+
+def _source_web_url(base_url: str | None, external_web_path: str | None) -> str | None:
+    if not base_url:
+        return None
+    if not external_web_path:
+        return base_url
+    return f"{base_url.rstrip('/')}/{external_web_path.lstrip('/')}"
 
 
 def _audio_languages(session: Session, media_file_id: int) -> str:

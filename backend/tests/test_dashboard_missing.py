@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from app.db.session import SessionLocal, initialize_database
@@ -22,6 +24,7 @@ def reset_dashboard_data() -> tuple[int, int]:
             source_type=SourceType.RADARR,
             name="Radarr",
             base_url="https://radarr.test",
+            web_url="https://radarr-web.test",
             api_key="key",
             enabled=True,
             timeout_seconds=10,
@@ -33,6 +36,7 @@ def reset_dashboard_data() -> tuple[int, int]:
             integration_id=integration.id,
             source_type=SourceType.RADARR,
             external_item_id="1",
+            external_web_path="/movie/missing-movie",
             media_type=MediaType.MOVIE,
             title="Missing Movie",
             monitored=True,
@@ -78,6 +82,18 @@ def test_missing_audio_respects_ignored_filter() -> None:
     assert visible.json()["total"] == 1
 
 
+def test_missing_audio_is_paginated_and_includes_source_web_url() -> None:
+    reset_dashboard_data()
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/missing?page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["source_web_url"] == "https://radarr-web.test/movie/missing-movie"
+
+
 def test_missing_csv_uses_utf8_bom() -> None:
     reset_dashboard_data()
     with TestClient(create_app()) as client:
@@ -86,3 +102,99 @@ def test_missing_csv_uses_utf8_bom() -> None:
     assert response.status_code == 200
     assert response.content.startswith("\ufeff".encode("utf-8"))
     assert "Missing Movie" in response.text
+
+
+def test_series_and_seasons_are_aggregated() -> None:
+    initialize_database()
+    with SessionLocal() as session:
+        session.query(IgnoredItem).delete()
+        session.query(MediaItemFileLink).delete()
+        session.query(MediaFile).delete()
+        session.query(MediaItem).delete()
+        session.query(Integration).delete()
+        integration = Integration(
+            source_type=SourceType.SONARR,
+            name="Sonarr",
+            base_url="https://sonarr-api.test",
+            web_url="https://sonarr.test",
+            api_key="key",
+            enabled=True,
+            timeout_seconds=10,
+            verify_tls=True,
+        )
+        session.add(integration)
+        session.flush()
+        file_one = MediaFile(
+            integration_id=integration.id,
+            source_type=SourceType.SONARR,
+            external_file_id="99",
+            original_source_path="/data/tv/demo/s01e01.mkv",
+            scan_state=ScanState.CZECH_AUDIO_MISSING,
+            last_scan_attempt=datetime(2026, 8, 6, 10, 0, tzinfo=UTC),
+        )
+        file_two = MediaFile(
+            integration_id=integration.id,
+            source_type=SourceType.SONARR,
+            external_file_id="100",
+            original_source_path="/data/tv/demo/s02e01.mkv",
+            scan_state=ScanState.CZECH_AUDIO_FOUND,
+            last_scan_attempt=datetime(2026, 8, 6, 10, 1, tzinfo=UTC),
+        )
+        session.add_all([file_one, file_two])
+        session.flush()
+        episodes = [
+            MediaItem(
+                integration_id=integration.id,
+                source_type=SourceType.SONARR,
+                external_item_id="101",
+                external_series_id="7",
+                external_web_path="/series/demo-show",
+                media_type=MediaType.EPISODE,
+                title="Part One",
+                series_title="Demo Show",
+                season_number=1,
+                episode_number=1,
+                monitored=True,
+                file_presence=True,
+            ),
+            MediaItem(
+                integration_id=integration.id,
+                source_type=SourceType.SONARR,
+                external_item_id="201",
+                external_series_id="7",
+                external_web_path="/series/demo-show",
+                media_type=MediaType.EPISODE,
+                title="Second Season",
+                series_title="Demo Show",
+                season_number=2,
+                episode_number=1,
+                monitored=True,
+                file_presence=True,
+            ),
+        ]
+        session.add_all(episodes)
+        session.flush()
+        session.add_all(
+            [
+                MediaItemFileLink(media_item_id=episodes[0].id, media_file_id=file_one.id),
+                MediaItemFileLink(media_item_id=episodes[1].id, media_file_id=file_two.id),
+            ]
+        )
+        session.commit()
+        integration_id = integration.id
+
+    with TestClient(create_app()) as client:
+        series_response = client.get("/api/v1/series")
+        seasons_response = client.get(f"/api/v1/series/{integration_id}/7/seasons")
+
+    assert series_response.status_code == 200
+    series_payload = series_response.json()
+    assert series_payload[0]["title"] == "Demo Show"
+    assert series_payload[0]["episode_count"] == 2
+    assert series_payload[0]["episodes_missing_czech_audio"] == 1
+    assert series_payload[0]["source_web_url"] == "https://sonarr.test/series/demo-show"
+
+    assert seasons_response.status_code == 200
+    seasons_payload = seasons_response.json()
+    assert [season["season_number"] for season in seasons_payload] == [1, 2]
+    assert seasons_payload[0]["episodes_missing_czech_audio"] == 1

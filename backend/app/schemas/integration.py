@@ -14,14 +14,17 @@ class IntegrationBase(BaseModel):
     source_type: SourceType
     name: str = Field(min_length=1, max_length=120)
     base_url: str = Field(min_length=1, max_length=500)
+    web_url: str | None = Field(default=None, max_length=500)
     enabled: bool = True
     timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
     verify_tls: bool = True
     api_key_env_var: str | None = Field(default=None, max_length=120)
 
-    @field_validator("base_url")
+    @field_validator("base_url", "web_url")
     @classmethod
-    def validate_base_url(cls, value: str) -> str:
+    def validate_base_url(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
         try:
             return normalize_base_url(value)
         except UrlValidationError as exc:
@@ -46,16 +49,17 @@ class IntegrationUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     base_url: str | None = Field(default=None, min_length=1, max_length=500)
+    web_url: str | None = Field(default=None, max_length=500)
     enabled: bool | None = None
     timeout_seconds: float | None = Field(default=None, ge=1.0, le=300.0)
     verify_tls: bool | None = None
     api_key: str | None = Field(default=None, max_length=500)
     api_key_env_var: str | None = Field(default=None, max_length=120)
 
-    @field_validator("base_url")
+    @field_validator("base_url", "web_url")
     @classmethod
     def validate_base_url(cls, value: str | None) -> str | None:
-        if value is None:
+        if value is None or value == "":
             return None
         try:
             return normalize_base_url(value)
@@ -70,6 +74,7 @@ class IntegrationRead(BaseModel):
     source_type: SourceType
     name: str
     base_url: str
+    web_url: str | None
     enabled: bool
     timeout_seconds: float
     verify_tls: bool

@@ -103,6 +103,8 @@ Restore by stopping Czecharr, replacing `/config` with the backup contents, then
 
 Create an API key in each Arr application and enter it in Czecharr Settings. Czecharr uses the `X-Api-Key` header and performs only read operations. Configure path mappings when the paths reported by Radarr/Sonarr differ from the paths mounted into Czecharr.
 
+Use **Base URL** for the API endpoint Czecharr should call. Use **Web URL** when the browser should open a different public Radarr/Sonarr host from the Czecharr UI. For example, the API can use `https://prxrdr.prikryl.cc` while Web URL points to `https://radarr.prikryl.cc`; Sonarr can be configured the same way with its own public host.
+
 ## Known Limitations
 
 - No built-in authentication; protect the app externally.

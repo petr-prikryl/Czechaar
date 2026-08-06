@@ -16,6 +16,7 @@ class Integration(Base):
     source_type: Mapped[SourceType] = mapped_column(String(20), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    web_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     api_key_env_var: Mapped[str | None] = mapped_column(String(120), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

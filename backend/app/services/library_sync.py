@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from sqlalchemy import select, update
@@ -158,6 +159,7 @@ class LibrarySyncService:
         )
         item.title = str(movie.get("title") or movie.get("originalTitle") or "Untitled movie")
         item.original_title = _optional_str(movie.get("originalTitle"))
+        item.external_web_path = _web_path("movie", movie.get("titleSlug"))
         item.year = _optional_int(movie.get("year"))
         item.monitored = bool(movie.get("monitored", True))
         item.file_presence = bool(movie.get("hasFile") or movie.get("movieFile"))
@@ -210,6 +212,7 @@ class LibrarySyncService:
             external_item_id=external_id,
         )
         item.external_series_id = str(series["id"])
+        item.external_web_path = _web_path("series", series.get("titleSlug"))
         item.title = str(episode.get("title") or "Untitled episode")
         item.series_title = str(series.get("title") or "Untitled series")
         item.year = _optional_int(series.get("year"))
@@ -322,3 +325,10 @@ def _poster_url(value: Any) -> str | None:
         if cover_type in {"poster", "banner"}:
             return _optional_str(image_payload.get("remoteUrl") or image_payload.get("url"))
     return None
+
+
+def _web_path(section: str, slug_value: Any) -> str | None:
+    slug = _optional_str(slug_value)
+    if slug is None:
+        return None
+    return f"/{section}/{quote(slug, safe='')}"

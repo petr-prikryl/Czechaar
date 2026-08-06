@@ -35,6 +35,7 @@ const mediaPage = {
       upstream_status: "released",
       poster_url: null,
       stale: false,
+      source_web_url: "https://radarr.example.test/movie/avatar-2009",
       media_file: {
         id: 2,
         external_file_id: "20",
@@ -70,6 +71,7 @@ const episodePage = {
       series_title: "Demo Show",
       season_number: 1,
       episode_number: 2,
+      source_web_url: "https://sonarr.example.test/series/demo-show",
     },
   ],
 };
@@ -134,8 +136,50 @@ function mockApi(scanHistory = defaultScanHistory) {
     if (url.startsWith("/api/v1/missing")) {
       return Promise.resolve(new Response(JSON.stringify(mediaPage), { status: 200 }));
     }
+    if (url.startsWith("/api/v1/media-files/2/audio-streams")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([
+            {
+              id: 1,
+              media_file_id: 2,
+              stream_index: 0,
+              codec_name: "aac",
+              channels: 2,
+              original_language: "eng",
+              normalized_language: "eng",
+              original_title: "English 2.0",
+              normalized_title: "english 2.0",
+              czech_match: false,
+              match_reason: "no_match",
+              matched_value: null,
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+    }
     if (url.startsWith("/api/v1/movies")) {
       return Promise.resolve(new Response(JSON.stringify(mediaPage), { status: 200 }));
+    }
+    if (url.startsWith("/api/v1/series/1/7/seasons")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([
+            {
+              integration_id: 1,
+              external_series_id: "7",
+              season_number: 1,
+              episode_count: 2,
+              files_scanned: 1,
+              episodes_missing_czech_audio: 1,
+              errors: 0,
+              stale: false,
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
     }
     if (url.startsWith("/api/v1/series")) {
       return Promise.resolve(
@@ -152,6 +196,7 @@ function mockApi(scanHistory = defaultScanHistory) {
               errors: 0,
               poster_url: null,
               stale: false,
+              source_web_url: "https://sonarr.example.test/series/demo-show",
             },
           ]),
           { status: 200 },
@@ -220,6 +265,17 @@ describe("media pages", () => {
     );
   });
 
+  it("expands missing audio diagnostics lazily", async () => {
+    mockApi();
+    renderPage(<MissingAudioPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /diagnostiku/ }));
+
+    expect(await screen.findByText(/nevyhovuje/)).toBeInTheDocument();
+    expect(screen.getByText("English 2.0")).toBeInTheDocument();
+    expect(screen.getByText("no_match")).toBeInTheDocument();
+  });
+
   it("renders the movie table", async () => {
     mockApi();
     renderPage(<MoviesPage />);
@@ -233,6 +289,7 @@ describe("media pages", () => {
     renderPage(<SeriesPage />);
 
     await userEvent.click(await screen.findByText("Demo Show"));
+    await userEvent.click(await screen.findByText(/Sez/));
 
     expect(await screen.findByText("S01E02")).toBeInTheDocument();
     expect(screen.getByText("Part One")).toBeInTheDocument();

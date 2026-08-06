@@ -9,6 +9,7 @@ Each Radarr integration stores:
 - Display name
 - Enabled state
 - Base URL
+- Optional Web URL for browser links when it differs from the API URL
 - API key or API-key environment variable name
 - Timeout
 - TLS verification flag
@@ -16,11 +17,13 @@ Each Radarr integration stores:
 
 The API key is sent in the `X-Api-Key` header. It is never added to query strings.
 
+`Base URL` is the endpoint used by the backend API client. `Web URL` is only returned to the frontend for "Open in Radarr" links. This supports deployments where Czecharr reaches Radarr through an internal or API-only reverse proxy while users open Radarr through a different public hostname.
+
 ## Read Operations
 
 The client reads movies from `/api/v3/movie` and system status from `/api/v3/system/status` for connection tests.
 
-Movie synchronization stores Radarr movie IDs, movie-file IDs, title metadata, monitored state, file presence, source paths, relative paths, quality, quality profile, file size, status and poster metadata where available.
+Movie synchronization stores Radarr movie IDs, movie-file IDs, title metadata, Radarr web path when the API provides a title slug, monitored state, file presence, source paths, relative paths, quality, quality profile, file size, status and poster metadata where available.
 
 ## Forbidden Operations
 

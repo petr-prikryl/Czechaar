@@ -7,6 +7,7 @@ export type Integration = {
   source_type: SourceType;
   name: string;
   base_url: string;
+  web_url: string | null;
   enabled: boolean;
   timeout_seconds: number;
   verify_tls: boolean;
@@ -21,12 +22,27 @@ export type IntegrationCreate = {
   source_type: SourceType;
   name: string;
   base_url: string;
+  web_url?: string | null;
   api_key?: string | null;
   api_key_env_var?: string | null;
   enabled: boolean;
   timeout_seconds: number;
   verify_tls: boolean;
 };
+
+export type IntegrationUpdate = Partial<
+  Pick<
+    IntegrationCreate,
+    | "name"
+    | "base_url"
+    | "web_url"
+    | "api_key"
+    | "api_key_env_var"
+    | "enabled"
+    | "timeout_seconds"
+    | "verify_tls"
+  >
+>;
 
 export type IntegrationConnectionTestResponse = {
   ok: boolean;
@@ -44,6 +60,13 @@ export function listIntegrations(signal?: AbortSignal) {
 export function createIntegration(payload: IntegrationCreate) {
   return apiRequest<Integration>("/api/v1/integrations", {
     method: "POST",
+    body: payload,
+  });
+}
+
+export function updateIntegration(integrationId: number, payload: IntegrationUpdate) {
+  return apiRequest<Integration>(`/api/v1/integrations/${integrationId}`, {
+    method: "PATCH",
     body: payload,
   });
 }

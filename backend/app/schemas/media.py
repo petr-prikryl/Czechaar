@@ -54,6 +54,7 @@ class MediaItemRead(BaseModel):
     poster_url: str | None
     stale: bool
     media_file: MediaFileSummary | None
+    source_web_url: str | None = None
 
 
 class MediaItemPage(BaseModel):
@@ -73,4 +74,16 @@ class SeriesSummary(BaseModel):
     episodes_missing_czech_audio: int
     errors: int
     poster_url: str | None = None
+    stale: bool = False
+    source_web_url: str | None = None
+
+
+class SeasonSummary(BaseModel):
+    integration_id: int
+    external_series_id: str
+    season_number: int | None
+    episode_count: int
+    files_scanned: int
+    episodes_missing_czech_audio: int
+    errors: int
     stale: bool = False

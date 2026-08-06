@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlugZap, Save, ShieldCheck, TestTube2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import {
   createIntegration,
@@ -8,9 +8,11 @@ import {
   type Integration,
   type IntegrationConnectionTestResponse,
   type IntegrationCreate,
+  type IntegrationUpdate,
   type SourceType,
   testSavedIntegration,
   testUnsavedIntegration,
+  updateIntegration,
 } from "../../api/integrations";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -21,6 +23,7 @@ const defaultForm: IntegrationCreate = {
   source_type: "radarr",
   name: "",
   base_url: "",
+  web_url: "",
   api_key: "",
   api_key_env_var: "",
   enabled: true,
@@ -61,6 +64,11 @@ export function IntegrationSettings() {
     mutationFn: testSavedIntegration,
     onSuccess: setTestResult,
   });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: IntegrationUpdate }) =>
+      updateIntegration(id, payload),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["integrations"] }),
+  });
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -68,6 +76,7 @@ export function IntegrationSettings() {
       ...form,
       name: form.name.trim(),
       base_url: form.base_url.trim(),
+      web_url: form.web_url?.trim() || null,
       api_key: form.api_key?.trim() || null,
       api_key_env_var: form.api_key_env_var?.trim() || null,
     });
@@ -76,6 +85,7 @@ export function IntegrationSettings() {
   const testCurrent = () => {
     unsavedTestMutation.mutate({
       ...form,
+      web_url: form.web_url?.trim() || null,
       api_key: form.api_key?.trim() || null,
       api_key_env_var: form.api_key_env_var?.trim() || null,
     });
@@ -109,6 +119,13 @@ export function IntegrationSettings() {
               integration={integration}
               testing={savedTestMutation.isPending}
               onTest={() => savedTestMutation.mutate(integration.id)}
+              saving={updateMutation.isPending}
+              onSaveWebUrl={(webUrl) =>
+                updateMutation.mutate({
+                  id: integration.id,
+                  payload: { web_url: webUrl.trim() || null },
+                })
+              }
             />
           ))}
         </div>
@@ -159,6 +176,19 @@ export function IntegrationSettings() {
               placeholder="https://radarr.example.test"
               required
             />
+          </label>
+
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">{t("settings.webUrl")}</span>
+            <input
+              className="h-10 w-full rounded-md border border-border bg-background px-3"
+              value={form.web_url ?? ""}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, web_url: event.target.value }))
+              }
+              placeholder="https://radarr.prikryl.cc"
+            />
+            <span className="text-xs text-muted-foreground">{t("settings.webUrlHelp")}</span>
           </label>
 
           <label className="block space-y-1 text-sm">
@@ -256,16 +286,25 @@ function IntegrationRow({
   integration,
   testing,
   onTest,
+  saving,
+  onSaveWebUrl,
 }: {
   integration: Integration;
   testing: boolean;
   onTest: () => void;
+  saving: boolean;
+  onSaveWebUrl: (webUrl: string) => void;
 }) {
   const { t } = useI18n();
+  const [webUrl, setWebUrl] = useState(integration.web_url ?? "");
+
+  useEffect(() => {
+    setWebUrl(integration.web_url ?? "");
+  }, [integration.web_url]);
 
   return (
     <div className="flex flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-medium">{integration.name}</p>
           <Badge>{sourceLabel(integration.source_type)}</Badge>
@@ -277,6 +316,26 @@ function IntegrationRow({
           </Badge>
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">{integration.base_url}</p>
+        <div className="mt-2 flex max-w-2xl flex-col gap-2 sm:flex-row">
+          <label className="sr-only" htmlFor={`web-url-${integration.id}`}>
+            {t("settings.webUrl")}
+          </label>
+          <input
+            id={`web-url-${integration.id}`}
+            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+            value={webUrl}
+            onChange={(event) => setWebUrl(event.target.value)}
+            placeholder={t("settings.webUrlPlaceholder")}
+          />
+          <Button
+            variant="secondary"
+            onClick={() => onSaveWebUrl(webUrl)}
+            disabled={saving || webUrl.trim() === (integration.web_url ?? "")}
+          >
+            <Save aria-hidden="true" size={14} />
+            {t("settings.saveWebUrl")}
+          </Button>
+        </div>
       </div>
       <Button variant="secondary" onClick={onTest} disabled={testing}>
         <TestTube2 aria-hidden="true" size={16} />

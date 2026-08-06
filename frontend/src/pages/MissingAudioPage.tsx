@@ -1,10 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { Download, RotateCw, Search, ShieldOff } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  Info,
+  RotateCw,
+  Search,
+  ShieldOff,
+} from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
 import { ignoreMediaFile } from "../api/ignored";
-import { getMissingAudio, type MediaItem } from "../api/media";
+import {
+  getAudioStreams,
+  getMissingAudio,
+  type MediaFileSummary,
+  type MediaItem,
+} from "../api/media";
 import { startMediaFileScan } from "../api/scans";
 import { StatusBadge } from "../components/StatusBadge";
 import { Button } from "../components/ui/Button";
@@ -16,9 +30,11 @@ export function MissingAudioPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [includeIgnored, setIncludeIgnored] = useState(false);
+  const [page, setPage] = useState(1);
+  const [expandedFileId, setExpandedFileId] = useState<number | null>(null);
   const params = new URLSearchParams({
-    page: "1",
-    page_size: "100",
+    page: String(page),
+    page_size: "50",
     include_ignored: String(includeIgnored),
   });
   if (search) {
@@ -26,7 +42,7 @@ export function MissingAudioPage() {
   }
 
   const query = useQuery({
-    queryKey: ["missing", search, includeIgnored],
+    queryKey: ["missing", search, includeIgnored, page],
     queryFn: ({ signal }) => getMissingAudio(params, signal),
   });
   const rescanMutation = useMutation({
@@ -40,6 +56,29 @@ export function MissingAudioPage() {
 
   const columns = useMemo<ColumnDef<MediaItem>[]>(
     () => [
+      {
+        id: "details",
+        header: "",
+        cell: ({ row }) => {
+          const fileId = row.original.media_file?.id;
+          const isExpanded = fileId !== undefined && expandedFileId === fileId;
+          return fileId ? (
+            <Button
+              aria-label={isExpanded ? t("missing.hideDetails") : t("missing.showDetails")}
+              className="h-8 w-8 px-0"
+              title={isExpanded ? t("missing.hideDetails") : t("missing.showDetails")}
+              variant="ghost"
+              onClick={() => setExpandedFileId(isExpanded ? null : fileId)}
+            >
+              {isExpanded ? (
+                <ChevronDown aria-hidden="true" size={15} />
+              ) : (
+                <Info aria-hidden="true" size={15} />
+              )}
+            </Button>
+          ) : null;
+        },
+      },
       { header: t("missing.type"), cell: ({ row }) => row.original.media_type },
       {
         header: t("missing.titleColumn"),
@@ -73,6 +112,19 @@ export function MissingAudioPage() {
           const fileId = row.original.media_file?.id;
           return fileId ? (
             <div className="flex gap-2">
+              {row.original.source_web_url ? (
+                <a
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  href={row.original.source_web_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink aria-hidden="true" size={14} />
+                  {row.original.source_type === "radarr"
+                    ? t("actions.openRadarr")
+                    : t("actions.openSonarr")}
+                </a>
+              ) : null}
               <Button variant="secondary" onClick={() => rescanMutation.mutate(fileId)}>
                 <RotateCw aria-hidden="true" size={14} />
                 {t("actions.rescan")}
@@ -86,7 +138,7 @@ export function MissingAudioPage() {
         },
       },
     ],
-    [ignoreMutation, rescanMutation, t],
+    [expandedFileId, ignoreMutation, rescanMutation, t],
   );
   const table = useReactTable({
     data: query.data?.items ?? [],
@@ -94,6 +146,10 @@ export function MissingAudioPage() {
     getCoreRowModel: getCoreRowModel(),
   });
   const exportHref = `/api/v1/missing/export.csv?${params.toString()}`;
+  const totalPages = Math.max(
+    1,
+    Math.ceil((query.data?.total ?? 0) / (query.data?.page_size ?? 50)),
+  );
 
   return (
     <div className="space-y-6">
@@ -116,7 +172,10 @@ export function MissingAudioPage() {
           <input
             className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
             placeholder={t("filters.search")}
           />
         </label>
@@ -124,7 +183,10 @@ export function MissingAudioPage() {
           <input
             type="checkbox"
             checked={includeIgnored}
-            onChange={(event) => setIncludeIgnored(event.target.checked)}
+            onChange={(event) => {
+              setIncludeIgnored(event.target.checked);
+              setPage(1);
+            }}
           />
           {t("filters.showIgnored")}
         </label>
@@ -156,13 +218,155 @@ export function MissingAudioPage() {
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-t border-border">
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2 align-middle">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+              table.getRowModel().rows.map((row) => {
+                const fileId = row.original.media_file?.id;
+                const isExpanded = fileId !== undefined && expandedFileId === fileId;
+                return (
+                  <Fragment key={row.id}>
+                    <tr className="border-t border-border">
+                      {row.getVisibleCells().map((cell) => (
+                        <td key={cell.id} className="px-3 py-2 align-middle">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      ))}
+                    </tr>
+                    {isExpanded ? (
+                      <tr className="border-t border-border bg-muted/40">
+                        <td className="px-3 py-4" colSpan={columns.length}>
+                          <MissingAudioDetails
+                            file={row.original.media_file}
+                            sourceType={row.original.source_type}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+        <span>
+          {t("common.page")} {page} {t("common.of")} {totalPages}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronRight aria-hidden="true" className="rotate-180" size={14} />
+            {t("common.previous")}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={page >= totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            {t("common.next")}
+            <ChevronRight aria-hidden="true" size={14} />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MissingAudioDetails({
+  file,
+  sourceType,
+}: {
+  file: MediaFileSummary | null;
+  sourceType: MediaItem["source_type"];
+}) {
+  const { t } = useI18n();
+  const streamsQuery = useQuery({
+    queryKey: ["audio-streams", file?.id],
+    queryFn: ({ signal }) => getAudioStreams(file!.id, signal),
+    enabled: file !== null,
+  });
+
+  if (!file) {
+    return <p className="text-sm text-muted-foreground">{t("common.empty")}</p>;
+  }
+
+  const reason =
+    file.error_code !== null
+      ? `${t("missing.errorReason")}: ${file.error_code}`
+      : t("missing.noCzechStreamMatch");
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,1.3fr)]">
+      <div className="space-y-3 text-sm">
+        <div className="flex items-start gap-2">
+          <Info aria-hidden="true" className="mt-0.5 text-muted-foreground" size={16} />
+          <div>
+            <p className="font-medium">{t("missing.details")}</p>
+            <p className="text-muted-foreground">{reason}</p>
+            {file.sanitized_error_message ? (
+              <p className="mt-1 text-rose-700 dark:text-rose-300">
+                {file.sanitized_error_message}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <dl className="grid gap-2">
+          <div>
+            <dt className="text-muted-foreground">{t("missing.originalPath")}</dt>
+            <dd className="break-all font-mono text-xs">{file.original_source_path}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t("missing.mappedPath")}</dt>
+            <dd className="break-all font-mono text-xs">
+              {file.mapped_local_path ?? t("settings.noMappingMatched")}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t("missing.integration")}</dt>
+            <dd>{sourceType === "radarr" ? "Radarr" : "Sonarr"}</dd>
+          </div>
+        </dl>
+      </div>
+      <div className="overflow-x-auto rounded-md border border-border bg-background">
+        <table className="w-full min-w-[520px] text-left text-xs">
+          <thead className="bg-muted text-muted-foreground">
+            <tr>
+              <th className="px-2 py-2">#</th>
+              <th className="px-2 py-2">{t("missing.streamLanguage")}</th>
+              <th className="px-2 py-2">{t("missing.streamTitle")}</th>
+              <th className="px-2 py-2">{t("missing.codec")}</th>
+              <th className="px-2 py-2">{t("missing.channels")}</th>
+              <th className="px-2 py-2">{t("missing.matchReason")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {streamsQuery.isLoading ? (
+              <tr>
+                <td className="px-2 py-4 text-muted-foreground" colSpan={6}>
+                  {t("common.loading")}
+                </td>
+              </tr>
+            ) : streamsQuery.data?.length === 0 ? (
+              <tr>
+                <td className="px-2 py-4 text-muted-foreground" colSpan={6}>
+                  {t("missing.noAudioStreams")}
+                </td>
+              </tr>
+            ) : (
+              streamsQuery.data?.map((stream) => (
+                <tr key={stream.id} className="border-t border-border">
+                  <td className="px-2 py-2">{stream.stream_index}</td>
+                  <td className="px-2 py-2">
+                    {stream.original_language || stream.normalized_language || "-"}
+                  </td>
+                  <td className="max-w-[220px] truncate px-2 py-2">
+                    {stream.original_title || "-"}
+                  </td>
+                  <td className="px-2 py-2">{stream.codec_name || "-"}</td>
+                  <td className="px-2 py-2">{stream.channels ?? "-"}</td>
+                  <td className="px-2 py-2">{stream.match_reason}</td>
                 </tr>
               ))
             )}
