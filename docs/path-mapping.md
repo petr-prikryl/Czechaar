@@ -30,7 +30,11 @@ Allowed media roots explicitly define what Czecharr may read. Examples:
 /media
 ```
 
-If a mapped file is outside every enabled root, the scan state becomes `path_outside_allowed_roots`. If no mapping matches, the scan state becomes `path_not_mapped`.
+If a mapped file is outside every enabled root, the scan state becomes `path_outside_allowed_roots`.
+If no mapping matches but the original Radarr/Sonarr path is already inside an enabled root,
+Czecharr uses that original path directly. This supports deployments where Radarr, Sonarr and
+Czecharr mount media at the same container paths. If no mapping matches and the original path is
+not inside an enabled root, the scan state becomes `path_not_mapped`.
 
 ## Docker
 

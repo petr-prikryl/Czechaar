@@ -19,7 +19,11 @@ from app.services.detection_settings import (
 )
 from app.services.ffprobe import FFPROBE_ANALYZER_VERSION, FfprobeRunner
 from app.services.fingerprint import calculate_fingerprint
-from app.services.path_mapping import map_remote_path, validate_allowed_media_root
+from app.services.path_mapping import (
+    map_remote_path,
+    normalize_media_path,
+    validate_allowed_media_root,
+)
 
 
 @dataclass(slots=True)
@@ -54,23 +58,28 @@ class MediaAnalysisService:
             integration_id=media_file.integration_id,
             mappings=mappings,
         )
-        media_file.mapped_local_path = mapping_result.mapped_path
+        mapped_path = mapping_result.mapped_path
+        if mapped_path is None:
+            original_path = normalize_media_path(media_file.original_source_path)
+            if validate_allowed_media_root(original_path, roots):
+                mapped_path = original_path
+        media_file.mapped_local_path = mapped_path
         media_file.last_scan_attempt = datetime.now(UTC)
 
-        if mapping_result.mapped_path is None:
+        if mapped_path is None:
             return self._finish_with_error(
                 media_file,
                 ScanState.PATH_NOT_MAPPED,
                 "No path mapping matched.",
             )
-        if not validate_allowed_media_root(mapping_result.mapped_path, roots):
+        if not validate_allowed_media_root(mapped_path, roots):
             return self._finish_with_error(
                 media_file,
                 ScanState.PATH_OUTSIDE_ALLOWED_ROOTS,
                 "Mapped path is outside allowed media roots.",
             )
 
-        local_path = Path(mapping_result.mapped_path)
+        local_path = Path(mapped_path)
         if not local_path.exists():
             return self._finish_with_error(
                 media_file,
