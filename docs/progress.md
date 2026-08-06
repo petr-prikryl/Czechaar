@@ -95,4 +95,4 @@
 - [x] Complete documentation
 - [x] Full checks
 - [x] Docker image build
-- [ ] Final push verification
+- [x] Final push verification
