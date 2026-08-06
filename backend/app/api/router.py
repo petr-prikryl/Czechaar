@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.dashboard import router as dashboard_router
+from app.api.v1.detection import router as detection_router
 from app.api.v1.health import router as health_router
 from app.api.v1.ignored import router as ignored_router
 from app.api.v1.integrations import router as integrations_router
@@ -11,6 +12,7 @@ from app.api.v1.sync import router as sync_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(dashboard_router)
+api_router.include_router(detection_router)
 api_router.include_router(health_router, tags=["system"])
 api_router.include_router(ignored_router)
 api_router.include_router(integrations_router)

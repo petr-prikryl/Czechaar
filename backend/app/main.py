@@ -13,6 +13,7 @@ from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import initialize_database
+from app.services.demo import seed_demo_data
 from app.services.scan_engine import recover_interrupted_scans
 from app.workers.scheduler import ScheduledScanWorker
 
@@ -22,6 +23,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
     initialize_database()
+    if settings.demo_mode:
+        seed_demo_data()
     recover_interrupted_scans()
     scheduler = ScheduledScanWorker(settings)
     scheduler.start()

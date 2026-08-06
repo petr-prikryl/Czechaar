@@ -48,6 +48,7 @@ CZECHARR_LOG_LEVEL=INFO
 CZECHARR_FFPROBE_PATH=ffprobe
 CZECHARR_FFPROBE_TIMEOUT=60
 CZECHARR_SCAN_CONCURRENCY=2
+CZECHARR_STALE_RETENTION_DAYS=30
 ```
 
 Do not place Radarr or Sonarr API keys in Compose files unless the file is protected and never committed. Prefer entering them in the Settings UI or supplying protected environment variables where your deployment platform supports that.
@@ -58,8 +59,15 @@ The production container runs `scripts/start.sh`, reports the current Alembic mi
 
 More details:
 
+- [Architecture](docs/architecture.md)
+- [Radarr API](docs/radarr-api.md)
+- [Sonarr API](docs/sonarr-api.md)
+- [Path mapping](docs/path-mapping.md)
+- [Scanning](docs/scanning.md)
 - [Docker deployment](docs/docker.md)
 - [Reverse proxy examples](docs/reverse-proxy.md)
+- [Development](docs/development.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Implementation plan](docs/implementation-plan.md)
 
 ## Security Model
@@ -69,6 +77,22 @@ Czecharr intentionally does not implement user authentication. Deploy it only be
 The `/config` directory stores persistent state, including the SQLite database. Protect it with appropriate filesystem permissions and include it in backups.
 
 Back up `/config` before major upgrades. Do not expose Czecharr directly to the internet.
+
+## Backup and Restore
+
+Backups should include the full `/config` directory, especially `czecharr.db`. Stop the container or make an SQLite-safe backup before copying the database.
+
+Restore by stopping Czecharr, replacing `/config` with the backup contents, then starting the container again. Startup migrations will apply any newer schema changes.
+
+## Radarr and Sonarr Setup
+
+Create an API key in each Arr application and enter it in Czecharr Settings. Czecharr uses the `X-Api-Key` header and performs only read operations. Configure path mappings when the paths reported by Radarr/Sonarr differ from the paths mounted into Czecharr.
+
+## Known Limitations
+
+- No built-in authentication; protect the app externally.
+- The first release runs one backend process because the scheduler and scan engine are in-process.
+- Demo integrations are disabled and use `.invalid` hostnames; they are for UI development data only.
 
 ## Development
 

@@ -13,6 +13,7 @@ services:
       CZECHARR_FFPROBE_PATH: ffprobe
       CZECHARR_FFPROBE_TIMEOUT: 60
       CZECHARR_SCAN_CONCURRENCY: 2
+      CZECHARR_STALE_RETENTION_DAYS: 30
     volumes:
       - ./config:/config
       - /mnt/media/movies:/movies:ro

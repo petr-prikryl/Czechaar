@@ -22,5 +22,18 @@ class VersionResponse(BaseModel):
     application: str
     version: str
     api_version: str
+    demo_mode: bool
     git_commit: str | None = None
     build_date: str | None = None
+
+
+class RuntimeSettingsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ffprobe_path: str
+    ffprobe_timeout: int
+    scan_concurrency: int
+    scheduled_scan_enabled: bool
+    scheduled_scan_interval_minutes: int
+    stale_retention_days: int
+    timezone: str

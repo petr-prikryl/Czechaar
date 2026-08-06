@@ -12,6 +12,11 @@ from app.models.audio import AudioStream
 from app.models.enums import ScanState, SourceType
 from app.models.media import MediaFile
 from app.models.path_mapping import AllowedMediaRoot, PathMapping
+from app.services.detection_settings import (
+    detection_config_from_settings,
+    detection_settings_version,
+    get_detection_settings,
+)
 from app.services.ffprobe import FFPROBE_ANALYZER_VERSION, FfprobeRunner
 from app.services.fingerprint import calculate_fingerprint
 from app.services.path_mapping import map_remote_path, validate_allowed_media_root
@@ -80,10 +85,15 @@ class MediaAnalysisService:
             )
 
         fingerprint = calculate_fingerprint(local_path)
+        detection_settings = get_detection_settings(self.session)
+        analyzer_version = (
+            f"{FFPROBE_ANALYZER_VERSION}:{detection_settings_version(detection_settings)}"
+        )
+
         if (
             not force
             and media_file.fingerprint == fingerprint.value
-            and media_file.analyzer_version == FFPROBE_ANALYZER_VERSION
+            and media_file.analyzer_version == analyzer_version
             and media_file.scan_state
             in {ScanState.CZECH_AUDIO_FOUND, ScanState.CZECH_AUDIO_MISSING}
         ):
@@ -93,7 +103,11 @@ class MediaAnalysisService:
             return AnalysisOutcome(media_file=media_file, cache_hit=True)
 
         settings = get_settings()
-        runner = FfprobeRunner(settings.ffprobe_path, settings.ffprobe_timeout)
+        runner = FfprobeRunner(
+            settings.ffprobe_path,
+            settings.ffprobe_timeout,
+            detection_config_from_settings(detection_settings),
+        )
         result = await runner.inspect_audio_streams(local_path)
         self.session.execute(delete(AudioStream).where(AudioStream.media_file_id == media_file.id))
         for stream in result.streams:
@@ -123,7 +137,7 @@ class MediaAnalysisService:
             if result.state in {ScanState.CZECH_AUDIO_FOUND, ScanState.CZECH_AUDIO_MISSING}
             else None
         )
-        media_file.analyzer_version = FFPROBE_ANALYZER_VERSION
+        media_file.analyzer_version = analyzer_version
         media_file.fingerprint = fingerprint.value
         media_file.size = fingerprint.size
         media_file.modified_time = fingerprint.modified_time

@@ -33,6 +33,18 @@ def test_version_endpoint() -> None:
     payload = response.json()
     assert payload["application"] == "Czecharr"
     assert payload["api_version"] == "v1"
+    assert payload["demo_mode"] is False
+
+
+def test_runtime_settings_endpoint() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/runtime-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ffprobe_path"] == "ffprobe"
+    assert payload["scan_concurrency"] >= 1
+    assert payload["timezone"] == "Europe/Prague"
 
 
 def test_static_frontend_serves_spa_routes(tmp_path: Path, monkeypatch) -> None:

@@ -42,9 +42,15 @@ class FfprobeResult:
 
 
 class FfprobeRunner:
-    def __init__(self, executable: str = "ffprobe", timeout_seconds: int = 60) -> None:
+    def __init__(
+        self,
+        executable: str = "ffprobe",
+        timeout_seconds: int = 60,
+        detection_config: CzechDetectionConfig | None = None,
+    ) -> None:
         self.executable = executable
         self.timeout_seconds = timeout_seconds
+        self.detection_config = detection_config
 
     async def inspect_audio_streams(self, media_path: Path) -> FfprobeResult:
         args = [
@@ -93,7 +99,7 @@ class FfprobeRunner:
                 [],
                 stderr_text or f"ffprobe exited with status {process.returncode}.",
             )
-        return parse_ffprobe_output(stdout_text)
+        return parse_ffprobe_output(stdout_text, self.detection_config)
 
 
 def parse_ffprobe_output(

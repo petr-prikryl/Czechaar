@@ -25,6 +25,17 @@ docker build -t czecharr:local .
 
 The image installs `ffmpeg`, which provides `ffprobe`, and runs as a non-root `czecharr` user.
 
+Common environment overrides:
+
+```text
+CZECHARR_FFPROBE_PATH=ffprobe
+CZECHARR_FFPROBE_TIMEOUT=60
+CZECHARR_SCAN_CONCURRENCY=2
+CZECHARR_STALE_RETENTION_DAYS=30
+CZECHARR_SCHEDULED_SCAN_ENABLED=false
+CZECHARR_SCHEDULED_SCAN_INTERVAL_MINUTES=1440
+```
+
 Optional build metadata:
 
 ```sh

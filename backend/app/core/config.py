@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     scan_concurrency: int = 2
     scheduled_scan_enabled: bool = False
     scheduled_scan_interval_minutes: int = 1440
+    stale_retention_days: int = 30
     demo_mode: bool = False
     static_dir: Path | None = None
     timezone: str = Field(

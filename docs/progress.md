@@ -86,13 +86,13 @@
 
 ## Stage 8: Final Hardening
 
-- [ ] Security review
-- [ ] API-key redaction review
-- [ ] Path traversal review
-- [ ] Subprocess safety review
-- [ ] Demo mode
-- [ ] Version metadata
-- [ ] Complete documentation
-- [ ] Full checks
-- [ ] Docker image build
+- [x] Security review
+- [x] API-key redaction review
+- [x] Path traversal review
+- [x] Subprocess safety review
+- [x] Demo mode
+- [x] Version metadata
+- [x] Complete documentation
+- [x] Full checks
+- [x] Docker image build
 - [ ] Final push verification
