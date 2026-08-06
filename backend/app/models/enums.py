@@ -33,3 +33,11 @@ class SyncStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class CzechMatchReason(StrEnum):
+    LANGUAGE_CODE = "language_code"
+    STREAM_TITLE = "stream_title"
+    CUSTOM_LANGUAGE_CODE = "custom_language_code"
+    CUSTOM_TITLE_INDICATOR = "custom_title_indicator"
+    NO_MATCH = "no_match"

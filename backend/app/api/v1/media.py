@@ -9,6 +9,7 @@ from app.models.enums import MediaType, ScanState, SourceType
 from app.models.media import MediaFile, MediaItem, MediaItemFileLink
 from app.repositories.media import MediaRepository
 from app.schemas.media import MediaFileSummary, MediaItemPage, MediaItemRead, SeriesSummary
+from app.services.media_analysis import MediaAnalysisService
 
 router = APIRouter(tags=["media"])
 
@@ -130,6 +131,17 @@ def list_series(session: Session = Depends(get_session)) -> list[SeriesSummary]:
             )
         )
     return sorted(summaries, key=lambda item: item.title.lower())
+
+
+@router.post("/media-files/{media_file_id}/probe", response_model=MediaFileSummary)
+async def probe_media_file(
+    media_file_id: int,
+    session: Session = Depends(get_session),
+) -> MediaFile:
+    try:
+        return await MediaAnalysisService(session).analyze_media_file(media_file_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 def _list_items(

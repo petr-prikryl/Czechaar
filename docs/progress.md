@@ -43,13 +43,13 @@
 
 ## Stage 4: Path Safety and ffprobe
 
-- [ ] Path mappings
-- [ ] Allowed media roots
-- [ ] ffprobe subprocess runner
-- [ ] Audio stream parser
-- [ ] Czech-audio detection
-- [ ] Analyzer versioning
-- [ ] Tests
+- [x] Path mappings
+- [x] Allowed media roots
+- [x] ffprobe subprocess runner
+- [x] Audio stream parser
+- [x] Czech-audio detection
+- [x] Analyzer versioning
+- [x] Tests
 
 ## Stage 5: Scan Engine
 
