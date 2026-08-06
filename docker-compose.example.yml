@@ -1,8 +1,6 @@
 services:
   czecharr:
-    image: czecharr:local
-    build:
-      context: .
+    image: git.prikryl.cc/petrprikryl/czecharr:latest
     container_name: czecharr
     environment:
       TZ: Europe/Prague

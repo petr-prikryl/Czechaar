@@ -20,6 +20,7 @@ FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ARG CZECHARR_GIT_COMMIT=unknown
 ARG CZECHARR_BUILD_DATE=unknown
+ARG CZECHARR_VERSION=0.1.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -35,6 +36,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CZECHARR_STATIC_DIR=/app/frontend/dist \
     CZECHARR_GIT_COMMIT=${CZECHARR_GIT_COMMIT} \
     CZECHARR_BUILD_DATE=${CZECHARR_BUILD_DATE}
+
+LABEL org.opencontainers.image.title="Czecharr" \
+    org.opencontainers.image.description="Self-hosted Czech audio detection for Radarr and Sonarr" \
+    org.opencontainers.image.source="https://git.prikryl.cc/petrprikryl/Czecharr" \
+    org.opencontainers.image.revision="${CZECHARR_GIT_COMMIT}" \
+    org.opencontainers.image.version="${CZECHARR_VERSION}" \
+    org.opencontainers.image.created="${CZECHARR_BUILD_DATE}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \

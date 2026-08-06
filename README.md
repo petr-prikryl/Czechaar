@@ -18,18 +18,31 @@ The application synchronizes Radarr and Sonarr metadata, maps remote library pat
 ## Quick Start
 
 ```sh
-docker compose up --build -d
+docker login git.prikryl.cc
+docker compose pull
+docker compose up -d
 ```
 
 Open `http://localhost:8787`.
 
-The default Compose file mounts:
+The default Compose file uses the published image and mounts:
 
 ```yaml
-volumes:
-  - ./config:/config
-  - /mnt/media/movies:/movies:ro
-  - /mnt/media/tv:/tv:ro
+services:
+  czecharr:
+    image: git.prikryl.cc/petrprikryl/czecharr:latest
+    container_name: czecharr
+    environment:
+      TZ: Europe/Prague
+      CZECHARR_CONFIG_DIR: /config
+      CZECHARR_DATABASE_URL: sqlite:////config/czecharr.db
+    volumes:
+      - ./config:/config
+      - /mnt/media/movies:/movies:ro
+      - /mnt/media/tv:/tv:ro
+    ports:
+      - "8787:8080"
+    restart: unless-stopped
 ```
 
 Adjust the media paths for your host before scanning. Media mounts should stay read-only.

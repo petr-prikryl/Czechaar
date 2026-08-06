@@ -48,10 +48,32 @@ docker build \
 ## Compose
 
 ```sh
-docker compose up --build -d
+docker login git.prikryl.cc
+docker compose pull
+docker compose up -d
 ```
 
 The default Compose file exposes Czecharr at `http://localhost:8787`.
+
+Minimal deployment service:
+
+```yaml
+services:
+  czecharr:
+    image: git.prikryl.cc/petrprikryl/czecharr:latest
+    container_name: czecharr
+    environment:
+      TZ: Europe/Prague
+      CZECHARR_CONFIG_DIR: /config
+      CZECHARR_DATABASE_URL: sqlite:////config/czecharr.db
+    volumes:
+      - ./config:/config
+      - /mnt/media/movies:/movies:ro
+      - /mnt/media/tv:/tv:ro
+    ports:
+      - "8787:8080"
+    restart: unless-stopped
+```
 
 ## Startup
 
