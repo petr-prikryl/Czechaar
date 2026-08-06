@@ -45,7 +45,7 @@ LABEL org.opencontainers.image.title="Czecharr" \
     org.opencontainers.image.created="${CZECHARR_BUILD_DATE}"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg gosu \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system czecharr \
@@ -65,8 +65,6 @@ COPY scripts/start.sh /usr/local/bin/czecharr-start
 RUN chmod +x /usr/local/bin/czecharr-start \
     && mkdir -p /config \
     && chown -R czecharr:czecharr /app /config
-
-USER czecharr
 
 EXPOSE 8080
 VOLUME ["/config"]

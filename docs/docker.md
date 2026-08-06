@@ -4,7 +4,7 @@ Czecharr is packaged as one production container that serves the FastAPI backend
 
 ## Runtime State
 
-Persistent state lives in `/config`. Back up this directory before upgrades because it contains the SQLite database.
+Persistent state lives in `/config`. Back up this directory before upgrades because it contains the SQLite database. The container entrypoint prepares this directory when it starts and then runs the application as the non-root `czecharr` user.
 
 Example mounts:
 
@@ -17,13 +17,15 @@ volumes:
 
 Media mounts should be read-only. Czecharr only needs to read files for `ffprobe`.
 
+If you override the container user, create the host config directory yourself and make it writable by that user before startup. Otherwise Alembic cannot open `/config/czecharr.db` during migrations.
+
 ## Build
 
 ```sh
 docker build -t czecharr:local .
 ```
 
-The image installs `ffmpeg`, which provides `ffprobe`, and runs as a non-root `czecharr` user.
+The image installs `ffmpeg`, which provides `ffprobe`. Startup begins with a small root entrypoint so bind-mounted `/config` directories can be prepared, then migrations and the web server run as the non-root `czecharr` user.
 
 Common environment overrides:
 

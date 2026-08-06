@@ -47,6 +47,8 @@ services:
 
 Adjust the media paths for your host before scanning. Media mounts should stay read-only.
 
+The container prepares the bind-mounted `./config` directory at startup and then drops privileges before running migrations and the web server. If you override the container user in Compose or your platform blocks ownership changes on bind mounts, make sure the host config directory is writable by the runtime user.
+
 ## Configuration
 
 Important environment variables:
@@ -87,7 +89,7 @@ More details:
 
 Czecharr intentionally does not implement user authentication. Deploy it only behind a trusted reverse proxy, VPN, firewall or IP allowlist. API keys are treated as sensitive configuration and must not be logged, committed or exposed to browsers after saving.
 
-The `/config` directory stores persistent state, including the SQLite database. Protect it with appropriate filesystem permissions and include it in backups.
+The `/config` directory stores persistent state, including the SQLite database. Protect it with appropriate filesystem permissions, keep it writable by the Czecharr container and include it in backups.
 
 Back up `/config` before major upgrades. Do not expose Czecharr directly to the internet.
 
