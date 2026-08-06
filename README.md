@@ -12,6 +12,7 @@ The application synchronizes Radarr and Sonarr metadata, maps remote library pat
 - Explicit allowed media roots before any `ffprobe` execution.
 - Audio-stream inspection with `ffprobe` and Czech-audio detection from stream metadata.
 - Persistent scan runs, cancellation, cache reuse and scan history.
+- Missing-audio diagnostics with safe manual `ffmpeg` repair-plan generation for stream metadata.
 - Responsive Czech/English web interface for dashboards, missing audio, movies, series, settings and scan history.
 - One production Docker container serving both the frontend and backend on port `8080`.
 
@@ -104,6 +105,8 @@ Restore by stopping Czecharr, replacing `/config` with the backup contents, then
 Create an API key in each Arr application and enter it in Czecharr Settings. Czecharr uses the `X-Api-Key` header and performs only read operations. Configure path mappings when the paths reported by Radarr/Sonarr differ from the paths mounted into Czecharr.
 
 Use **Base URL** for the API endpoint Czecharr should call. Use **Web URL** when the browser should open a different public Radarr/Sonarr host from the Czecharr UI. For example, the API can use `https://prxrdr.prikryl.cc` while Web URL points to `https://radarr.prikryl.cc`; Sonarr can be configured the same way with its own public host.
+
+Open-in-Radarr and Open-in-Sonarr actions target the imported movie or series detail page. Run a library synchronization after changing Web URL settings so Czecharr refreshes stored Arr slugs for existing records.
 
 ## Known Limitations
 

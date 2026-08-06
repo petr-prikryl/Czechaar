@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import csv
 import io
+import re
+import shlex
+import unicodedata
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.db.session import get_session
 from app.models.audio import AudioStream
 from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
@@ -16,6 +21,9 @@ from app.models.integration import Integration
 from app.models.media import MediaFile, MediaItem, MediaItemFileLink
 from app.repositories.media import MediaRepository
 from app.schemas.media import (
+    AudioStreamRead,
+    FfmpegRepairPlan,
+    FfmpegRepairPlanRequest,
     MediaFileSummary,
     MediaItemPage,
     MediaItemRead,
@@ -164,7 +172,10 @@ def list_series(session: Session = Depends(get_session)) -> list[SeriesSummary]:
             errors=int(row.errors or 0),
             poster_url=row.poster_url,
             stale=bool(row.stale),
-            source_web_url=_source_web_url(row.web_url or row.base_url, row.external_web_path),
+            source_web_url=_source_web_url(
+                row.web_url or row.base_url,
+                row.external_web_path or _derived_series_web_path(str(row.title or "")),
+            ),
         )
         for row in session.execute(statement)
     ]
@@ -334,32 +345,80 @@ def get_media_file(media_file_id: int, session: Session = Depends(get_session)) 
     return media_file
 
 
-@router.get("/media-files/{media_file_id}/audio-streams")
+@router.get("/media-files/{media_file_id}/audio-streams", response_model=list[AudioStreamRead])
 def list_audio_streams(
     media_file_id: int, session: Session = Depends(get_session)
-) -> list[dict[str, object]]:
+) -> list[AudioStreamRead]:
     statement = (
         select(AudioStream)
         .where(AudioStream.media_file_id == media_file_id)
         .order_by(AudioStream.stream_index)
     )
-    return [
-        {
-            "id": stream.id,
-            "media_file_id": stream.media_file_id,
-            "stream_index": stream.stream_index,
-            "codec_name": stream.codec_name,
-            "channels": stream.channels,
-            "original_language": stream.original_language,
-            "normalized_language": stream.normalized_language,
-            "original_title": stream.original_title,
-            "normalized_title": stream.normalized_title,
-            "czech_match": stream.czech_match,
-            "match_reason": stream.match_reason,
-            "matched_value": stream.matched_value,
-        }
-        for stream in session.scalars(statement)
+    return [AudioStreamRead.model_validate(stream) for stream in session.scalars(statement)]
+
+
+@router.post(
+    "/media-files/{media_file_id}/ffmpeg-repair-plan",
+    response_model=FfmpegRepairPlan,
+)
+def create_ffmpeg_repair_plan(
+    media_file_id: int,
+    payload: FfmpegRepairPlanRequest,
+    session: Session = Depends(get_session),
+) -> FfmpegRepairPlan:
+    media_file = session.get(MediaFile, media_file_id)
+    if media_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found.")
+    stream = session.get(AudioStream, payload.audio_stream_id)
+    if stream is None or stream.media_file_id != media_file_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio stream not found.")
+    if not media_file.mapped_local_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media file does not have a mapped local path.",
+        )
+
+    streams = list(
+        session.scalars(
+            select(AudioStream)
+            .where(AudioStream.media_file_id == media_file_id)
+            .order_by(AudioStream.stream_index)
+        )
+    )
+    audio_ordinal = next(
+        index for index, candidate in enumerate(streams) if candidate.id == stream.id
+    )
+    output_path = _repair_output_path(media_file)
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        media_file.mapped_local_path,
+        "-map",
+        "0",
+        "-c",
+        "copy",
+        f"-metadata:s:a:{audio_ordinal}",
+        f"language={payload.language_code}",
+        f"-metadata:s:a:{audio_ordinal}",
+        f"title={payload.title}",
+        output_path,
     ]
+    return FfmpegRepairPlan(
+        media_file_id=media_file.id,
+        audio_stream_id=stream.id,
+        audio_stream_index=stream.stream_index,
+        audio_stream_ordinal=audio_ordinal,
+        input_path=media_file.mapped_local_path,
+        output_path=output_path,
+        command=command,
+        display_command=shlex.join(command),
+        warning=(
+            "This command is a manual repair plan. Czecharr does not execute it and does not "
+            "modify media files. It writes a remuxed copy under the configured /config repair "
+            "directory when run inside the container."
+        ),
+    )
 
 
 def _list_items(
@@ -445,12 +504,13 @@ def _serialize_items(session: Session, items: list[MediaItem]) -> list[MediaItem
 
 def _serialize_item(item: MediaItem, integration: Integration | None) -> MediaItemRead:
     media_file = _first_file(item)
+    external_web_path = item.external_web_path or _derived_item_web_path(item)
     return MediaItemRead.model_validate(
         {
             **item.__dict__,
             "source_web_url": _source_web_url(
                 integration.web_url or integration.base_url if integration else None,
-                item.external_web_path,
+                external_web_path,
             ),
             "media_file": (
                 MediaFileSummary.model_validate(media_file, from_attributes=True)
@@ -551,11 +611,41 @@ def _integration_map(session: Session, items: list[MediaItem]) -> dict[int, Inte
 
 
 def _source_web_url(base_url: str | None, external_web_path: str | None) -> str | None:
-    if not base_url:
+    if not base_url or not external_web_path:
         return None
-    if not external_web_path:
-        return base_url
     return f"{base_url.rstrip('/')}/{external_web_path.lstrip('/')}"
+
+
+def _derived_item_web_path(item: MediaItem) -> str | None:
+    if item.media_type == MediaType.MOVIE:
+        title = f"{item.title} {item.year}" if item.year else item.title
+        return _derived_web_path("movie", title)
+    if item.external_series_id or item.series_title:
+        return _derived_series_web_path(item.series_title or item.title)
+    return None
+
+
+def _derived_series_web_path(title: str) -> str | None:
+    return _derived_web_path("series", title)
+
+
+def _derived_web_path(section: str, title: str) -> str | None:
+    slug = _slugify(title)
+    return f"/{section}/{slug}" if slug else None
+
+
+def _slugify(value: str) -> str:
+    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return "-".join(re.findall(r"[a-z0-9]+", ascii_value.lower()))
+
+
+def _repair_output_path(media_file: MediaFile) -> str:
+    config_dir = get_settings().config_dir
+    filename = Path(media_file.mapped_local_path or "").name or f"media-file-{media_file.id}.mkv"
+    source_filename = Path(filename)
+    suffix = source_filename.suffix or ".mkv"
+    stem = source_filename.stem or f"media-file-{media_file.id}"
+    return (config_dir / "repair" / f"{stem}.czecharr-fixed{suffix}").as_posix()
 
 
 def _audio_languages(session: Session, media_file_id: int) -> str:

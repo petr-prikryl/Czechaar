@@ -3,19 +3,23 @@ import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tan
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   Download,
   ExternalLink,
   Info,
   RotateCw,
   Search,
   ShieldOff,
+  Wrench,
 } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 
 import { ignoreMediaFile } from "../api/ignored";
 import {
+  createFfmpegRepairPlan,
   getAudioStreams,
   getMissingAudio,
+  type FfmpegRepairPlan,
   type MediaFileSummary,
   type MediaItem,
 } from "../api/media";
@@ -58,16 +62,16 @@ export function MissingAudioPage() {
     () => [
       {
         id: "details",
-        header: "",
+        header: t("missing.reason"),
         cell: ({ row }) => {
           const fileId = row.original.media_file?.id;
           const isExpanded = fileId !== undefined && expandedFileId === fileId;
           return fileId ? (
             <Button
-              aria-label={isExpanded ? t("missing.hideDetails") : t("missing.showDetails")}
-              className="h-8 w-8 px-0"
+              aria-label={isExpanded ? t("missing.hideDetails") : t("missing.reason")}
+              className="h-8 px-2"
               title={isExpanded ? t("missing.hideDetails") : t("missing.showDetails")}
-              variant="ghost"
+              variant="secondary"
               onClick={() => setExpandedFileId(isExpanded ? null : fileId)}
             >
               {isExpanded ? (
@@ -75,7 +79,47 @@ export function MissingAudioPage() {
               ) : (
                 <Info aria-hidden="true" size={15} />
               )}
+              {isExpanded ? t("missing.hideDetails") : t("missing.reason")}
             </Button>
+          ) : null;
+        },
+      },
+      {
+        header: t("missing.actions"),
+        cell: ({ row }) => {
+          const fileId = row.original.media_file?.id;
+          return fileId ? (
+            <div className="flex max-w-[300px] flex-wrap gap-2">
+              {row.original.source_web_url ? (
+                <a
+                  className="inline-flex h-8 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-border bg-background px-2 text-sm font-medium transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  href={row.original.source_web_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink aria-hidden="true" size={14} />
+                  {row.original.source_type === "radarr"
+                    ? t("actions.openRadarr")
+                    : t("actions.openSonarr")}
+                </a>
+              ) : null}
+              <Button
+                className="h-8 px-2"
+                variant="secondary"
+                onClick={() => rescanMutation.mutate(fileId)}
+              >
+                <RotateCw aria-hidden="true" size={14} />
+                {t("actions.rescan")}
+              </Button>
+              <Button
+                className="h-8 px-2"
+                variant="ghost"
+                onClick={() => ignoreMutation.mutate(fileId)}
+              >
+                <ShieldOff aria-hidden="true" size={14} />
+                {t("actions.ignore")}
+              </Button>
+            </div>
           ) : null;
         },
       },
@@ -105,37 +149,6 @@ export function MissingAudioPage() {
             {row.original.media_file?.mapped_local_path}
           </span>
         ),
-      },
-      {
-        header: t("missing.actions"),
-        cell: ({ row }) => {
-          const fileId = row.original.media_file?.id;
-          return fileId ? (
-            <div className="flex gap-2">
-              {row.original.source_web_url ? (
-                <a
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  href={row.original.source_web_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <ExternalLink aria-hidden="true" size={14} />
-                  {row.original.source_type === "radarr"
-                    ? t("actions.openRadarr")
-                    : t("actions.openSonarr")}
-                </a>
-              ) : null}
-              <Button variant="secondary" onClick={() => rescanMutation.mutate(fileId)}>
-                <RotateCw aria-hidden="true" size={14} />
-                {t("actions.rescan")}
-              </Button>
-              <Button variant="ghost" onClick={() => ignoreMutation.mutate(fileId)}>
-                <ShieldOff aria-hidden="true" size={14} />
-                {t("actions.ignore")}
-              </Button>
-            </div>
-          ) : null;
-        },
       },
     ],
     [expandedFileId, ignoreMutation, rescanMutation, t],
@@ -192,7 +205,7 @@ export function MissingAudioPage() {
         </label>
       </div>
       <div className="overflow-x-auto rounded-lg border border-border bg-background">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-muted text-muted-foreground">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -282,6 +295,16 @@ function MissingAudioDetails({
   sourceType: MediaItem["source_type"];
 }) {
   const { t } = useI18n();
+  const [repairPlan, setRepairPlan] = useState<FfmpegRepairPlan | null>(null);
+  const repairMutation = useMutation({
+    mutationFn: (audioStreamId: number) => {
+      if (!file) {
+        throw new Error("Media file is not available.");
+      }
+      return createFfmpegRepairPlan(file.id, audioStreamId);
+    },
+    onSuccess: setRepairPlan,
+  });
   const streamsQuery = useQuery({
     queryKey: ["audio-streams", file?.id],
     queryFn: ({ signal }) => getAudioStreams(file!.id, signal),
@@ -296,6 +319,7 @@ function MissingAudioDetails({
     file.error_code !== null
       ? `${t("missing.errorReason")}: ${file.error_code}`
       : t("missing.noCzechStreamMatch");
+  const activeRepairPlan = repairPlan?.media_file_id === file.id ? repairPlan : null;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,1.3fr)]">
@@ -329,49 +353,95 @@ function MissingAudioDetails({
           </div>
         </dl>
       </div>
-      <div className="overflow-x-auto rounded-md border border-border bg-background">
-        <table className="w-full min-w-[520px] text-left text-xs">
-          <thead className="bg-muted text-muted-foreground">
-            <tr>
-              <th className="px-2 py-2">#</th>
-              <th className="px-2 py-2">{t("missing.streamLanguage")}</th>
-              <th className="px-2 py-2">{t("missing.streamTitle")}</th>
-              <th className="px-2 py-2">{t("missing.codec")}</th>
-              <th className="px-2 py-2">{t("missing.channels")}</th>
-              <th className="px-2 py-2">{t("missing.matchReason")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {streamsQuery.isLoading ? (
+      <div className="space-y-3">
+        <div className="overflow-x-auto rounded-md border border-border bg-background">
+          <table className="w-full min-w-[660px] text-left text-xs">
+            <thead className="bg-muted text-muted-foreground">
               <tr>
-                <td className="px-2 py-4 text-muted-foreground" colSpan={6}>
-                  {t("common.loading")}
-                </td>
+                <th className="px-2 py-2">#</th>
+                <th className="px-2 py-2">{t("missing.streamLanguage")}</th>
+                <th className="px-2 py-2">{t("missing.streamTitle")}</th>
+                <th className="px-2 py-2">{t("missing.codec")}</th>
+                <th className="px-2 py-2">{t("missing.channels")}</th>
+                <th className="px-2 py-2">{t("missing.matchReason")}</th>
+                <th className="px-2 py-2">{t("missing.actions")}</th>
               </tr>
-            ) : streamsQuery.data?.length === 0 ? (
-              <tr>
-                <td className="px-2 py-4 text-muted-foreground" colSpan={6}>
-                  {t("missing.noAudioStreams")}
-                </td>
-              </tr>
-            ) : (
-              streamsQuery.data?.map((stream) => (
-                <tr key={stream.id} className="border-t border-border">
-                  <td className="px-2 py-2">{stream.stream_index}</td>
-                  <td className="px-2 py-2">
-                    {stream.original_language || stream.normalized_language || "-"}
+            </thead>
+            <tbody>
+              {streamsQuery.isLoading ? (
+                <tr>
+                  <td className="px-2 py-4 text-muted-foreground" colSpan={7}>
+                    {t("common.loading")}
                   </td>
-                  <td className="max-w-[220px] truncate px-2 py-2">
-                    {stream.original_title || "-"}
-                  </td>
-                  <td className="px-2 py-2">{stream.codec_name || "-"}</td>
-                  <td className="px-2 py-2">{stream.channels ?? "-"}</td>
-                  <td className="px-2 py-2">{stream.match_reason}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : streamsQuery.data?.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-muted-foreground" colSpan={7}>
+                    {t("missing.noAudioStreams")}
+                  </td>
+                </tr>
+              ) : (
+                streamsQuery.data?.map((stream) => (
+                  <tr key={stream.id} className="border-t border-border">
+                    <td className="px-2 py-2">{stream.stream_index}</td>
+                    <td className="px-2 py-2">
+                      {stream.original_language || stream.normalized_language || "-"}
+                    </td>
+                    <td className="max-w-[220px] truncate px-2 py-2">
+                      {stream.original_title || "-"}
+                    </td>
+                    <td className="px-2 py-2">{stream.codec_name || "-"}</td>
+                    <td className="px-2 py-2">{stream.channels ?? "-"}</td>
+                    <td className="px-2 py-2">{stream.match_reason}</td>
+                    <td className="px-2 py-2">
+                      <Button
+                        className="h-8 px-2"
+                        variant="secondary"
+                        onClick={() => repairMutation.mutate(stream.id)}
+                      >
+                        <Wrench aria-hidden="true" size={14} />
+                        {t("actions.repairMetadata")}
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {repairMutation.isError ? (
+          <p className="text-sm text-rose-700 dark:text-rose-300">
+            {t("common.error")}: {repairMutation.error.message}
+          </p>
+        ) : null}
+        {activeRepairPlan ? (
+          <div className="space-y-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
+            <div>
+              <p className="font-medium">{t("missing.ffmpegRepair")}</p>
+              <p className="mt-1 text-muted-foreground">{t("missing.ffmpegRepairHelp")}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">{t("missing.repairOutput")}</p>
+              <p className="break-all font-mono text-xs">{activeRepairPlan.output_path}</p>
+            </div>
+            <pre className="max-h-44 overflow-auto rounded-md bg-background p-3 text-xs">
+              {activeRepairPlan.display_command}
+            </pre>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                className="w-full sm:w-auto"
+                variant="secondary"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(activeRepairPlan.display_command);
+                }}
+              >
+                <Copy aria-hidden="true" size={14} />
+                {t("actions.copyCommand")}
+              </Button>
+              <p className="text-xs text-muted-foreground">{t("missing.ffmpegRepairWarning")}</p>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

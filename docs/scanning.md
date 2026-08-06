@@ -16,6 +16,12 @@ ffprobe -v error -select_streams a -show_entries stream=index,codec_name,codec_l
 
 Captured output is bounded, timeouts terminate the process, and failures are stored as explicit scan states instead of being treated as missing Czech audio.
 
+## Manual Metadata Repair Plans
+
+When a stream is clearly Czech but lacks usable stream metadata, the Missing Czech Audio diagnostics can generate an `ffmpeg` repair plan for that specific audio stream. Czecharr does not execute the command automatically and never edits files in the media mounts. The generated command remuxes a copy under `/config/repair` with `-c copy` and metadata such as `language=cze` and `title=Čeština`.
+
+Verify the generated copy manually before replacing any original file, then rescan the item in Radarr/Sonarr and Czecharr.
+
 ## Czech Audio Detection
 
 Detection uses audio-stream metadata only. It checks normalized language tags and stream titles. File names, directory names, Radarr titles, Sonarr titles and subtitles are not definitive proof.

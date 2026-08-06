@@ -1,4 +1,4 @@
-import { apiGet } from "./client";
+import { apiGet, apiRequest } from "./client";
 
 export type MediaFileSummary = {
   id: number;
@@ -78,7 +78,11 @@ export type AudioStream = {
   media_file_id: number;
   stream_index: number;
   codec_name: string | null;
+  codec_long_name: string | null;
   channels: number | null;
+  channel_layout: string | null;
+  sample_rate: number | null;
+  bit_rate: number | null;
   original_language: string | null;
   normalized_language: string | null;
   original_title: string | null;
@@ -86,6 +90,18 @@ export type AudioStream = {
   czech_match: boolean;
   match_reason: string;
   matched_value: string | null;
+};
+
+export type FfmpegRepairPlan = {
+  media_file_id: number;
+  audio_stream_id: number;
+  audio_stream_index: number;
+  audio_stream_ordinal: number;
+  input_path: string;
+  output_path: string;
+  command: string[];
+  display_command: string;
+  warning: string;
 };
 
 export function getMissingAudio(params: URLSearchParams, signal?: AbortSignal) {
@@ -145,4 +161,15 @@ export function getSeriesSeasons(
 
 export function getAudioStreams(mediaFileId: number, signal?: AbortSignal) {
   return apiGet<AudioStream[]>(`/api/v1/media-files/${mediaFileId}/audio-streams`, signal);
+}
+
+export function createFfmpegRepairPlan(mediaFileId: number, audioStreamId: number) {
+  return apiRequest<FfmpegRepairPlan>(`/api/v1/media-files/${mediaFileId}/ffmpeg-repair-plan`, {
+    method: "POST",
+    body: {
+      audio_stream_id: audioStreamId,
+      language_code: "cze",
+      title: "Čeština",
+    },
+  });
 }

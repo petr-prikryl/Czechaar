@@ -145,7 +145,11 @@ function mockApi(scanHistory = defaultScanHistory) {
               media_file_id: 2,
               stream_index: 0,
               codec_name: "aac",
+              codec_long_name: "AAC",
               channels: 2,
+              channel_layout: "stereo",
+              sample_rate: 48000,
+              bit_rate: 192000,
               original_language: "eng",
               normalized_language: "eng",
               original_title: "English 2.0",
@@ -155,6 +159,39 @@ function mockApi(scanHistory = defaultScanHistory) {
               matched_value: null,
             },
           ]),
+          { status: 200 },
+        ),
+      );
+    }
+    if (url.startsWith("/api/v1/media-files/2/ffmpeg-repair-plan")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            media_file_id: 2,
+            audio_stream_id: 1,
+            audio_stream_index: 0,
+            audio_stream_ordinal: 0,
+            input_path: "/movies/Avatar.mkv",
+            output_path: "/config/repair/Avatar.czecharr-fixed.mkv",
+            command: [
+              "ffmpeg",
+              "-hide_banner",
+              "-i",
+              "/movies/Avatar.mkv",
+              "-map",
+              "0",
+              "-c",
+              "copy",
+              "-metadata:s:a:0",
+              "language=cze",
+              "-metadata:s:a:0",
+              "title=Čeština",
+              "/config/repair/Avatar.czecharr-fixed.mkv",
+            ],
+            display_command:
+              "ffmpeg -hide_banner -i /movies/Avatar.mkv -map 0 -c copy -metadata:s:a:0 language=cze -metadata:s:a:0 title=Čeština /config/repair/Avatar.czecharr-fixed.mkv",
+            warning: "Czecharr does not execute this command.",
+          }),
           { status: 200 },
         ),
       );
@@ -258,6 +295,10 @@ describe("media pages", () => {
     renderPage(<MissingAudioPage />);
 
     expect(await screen.findByText("Avatar")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Radarr/ })).toHaveAttribute(
+      "href",
+      "https://radarr.example.test/movie/avatar-2009",
+    );
     await userEvent.click(screen.getByRole("button", { name: /Ignorovat/ }));
 
     await waitFor(() =>
@@ -269,11 +310,26 @@ describe("media pages", () => {
     mockApi();
     renderPage(<MissingAudioPage />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /diagnostiku/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Důvod/ }));
 
     expect(await screen.findByText(/nevyhovuje/)).toBeInTheDocument();
     expect(screen.getByText("English 2.0")).toBeInTheDocument();
     expect(screen.getByText("no_match")).toBeInTheDocument();
+  });
+
+  it("shows an ffmpeg repair plan from missing audio diagnostics", async () => {
+    const fetchMock = mockApi();
+    renderPage(<MissingAudioPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Důvod/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Navrhnout opravu/ }));
+
+    expect(await screen.findByText(/ffmpeg -hide_banner/)).toBeInTheDocument();
+    expect(screen.getByText("/config/repair/Avatar.czecharr-fixed.mkv")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/media-files/2/ffmpeg-repair-plan",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("renders the movie table", async () => {

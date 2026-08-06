@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.db.session import SessionLocal, initialize_database
 from app.main import create_app
+from app.models.audio import AudioStream
 from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
 from app.models.ignored import IgnoredItem
 from app.models.integration import Integration
@@ -16,6 +17,7 @@ def reset_dashboard_data() -> tuple[int, int]:
     initialize_database()
     with SessionLocal() as session:
         session.query(IgnoredItem).delete()
+        session.query(AudioStream).delete()
         session.query(MediaItemFileLink).delete()
         session.query(MediaFile).delete()
         session.query(MediaItem).delete()
@@ -47,6 +49,7 @@ def reset_dashboard_data() -> tuple[int, int]:
             source_type=SourceType.RADARR,
             external_file_id="2",
             original_source_path="/data/movie.mkv",
+            mapped_local_path="/movies/Missing Movie.mkv",
             scan_state=ScanState.CZECH_AUDIO_MISSING,
             quality="Bluray-1080p",
         )
@@ -94,6 +97,64 @@ def test_missing_audio_is_paginated_and_includes_source_web_url() -> None:
     assert payload["items"][0]["source_web_url"] == "https://radarr-web.test/movie/missing-movie"
 
 
+def test_missing_audio_derives_specific_arr_url_when_slug_is_missing() -> None:
+    item_id, _ = reset_dashboard_data()
+    with SessionLocal() as session:
+        item = session.get(MediaItem, item_id)
+        assert item is not None
+        item.external_web_path = None
+        item.year = 2024
+        session.add(item)
+        session.commit()
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/missing?page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert (
+        payload["items"][0]["source_web_url"] == "https://radarr-web.test/movie/missing-movie-2024"
+    )
+
+
+def test_ffmpeg_repair_plan_is_generated_without_executing_ffmpeg() -> None:
+    _, media_file_id = reset_dashboard_data()
+    with SessionLocal() as session:
+        stream = AudioStream(
+            media_file_id=media_file_id,
+            stream_index=2,
+            codec_name="aac",
+            original_language=None,
+            normalized_language=None,
+            original_title=None,
+            normalized_title=None,
+            czech_match=False,
+            match_reason="no_match",
+        )
+        session.add(stream)
+        session.commit()
+        stream_id = stream.id
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            f"/api/v1/media-files/{media_file_id}/ffmpeg-repair-plan",
+            json={
+                "audio_stream_id": stream_id,
+                "language_code": "cze",
+                "title": "Čeština",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["command"][0] == "ffmpeg"
+    assert payload["input_path"] == "/movies/Missing Movie.mkv"
+    assert payload["output_path"].endswith("Missing Movie.czecharr-fixed.mkv")
+    assert "language=cze" in payload["command"]
+    assert "title=Čeština" in payload["command"]
+    assert "does not execute" in payload["warning"]
+
+
 def test_missing_csv_uses_utf8_bom() -> None:
     reset_dashboard_data()
     with TestClient(create_app()) as client:
@@ -108,6 +169,7 @@ def test_series_and_seasons_are_aggregated() -> None:
     initialize_database()
     with SessionLocal() as session:
         session.query(IgnoredItem).delete()
+        session.query(AudioStream).delete()
         session.query(MediaItemFileLink).delete()
         session.query(MediaFile).delete()
         session.query(MediaItem).delete()
