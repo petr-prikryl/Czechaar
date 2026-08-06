@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
 import { I18nProvider } from "../src/i18n/I18nProvider";
@@ -19,6 +19,33 @@ function renderApp() {
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  vi.spyOn(window, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        total_movies: 0,
+        total_episodes: 0,
+        total_media_files: 0,
+        scanned_files: 0,
+        files_with_czech_audio: 0,
+        files_missing_czech_audio: 0,
+        scan_errors: 0,
+        files_without_mappings: 0,
+        ignored_items: 0,
+        stale_items: 0,
+        last_synchronization_time: null,
+        last_completed_scan_time: null,
+        current_scan: null,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("Czecharr shell", () => {
   it("renders Czech navigation by default", () => {

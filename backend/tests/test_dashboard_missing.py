@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from app.db.session import SessionLocal, initialize_database
+from app.main import create_app
+from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
+from app.models.ignored import IgnoredItem
+from app.models.integration import Integration
+from app.models.media import MediaFile, MediaItem, MediaItemFileLink
+
+
+def reset_dashboard_data() -> tuple[int, int]:
+    initialize_database()
+    with SessionLocal() as session:
+        session.query(IgnoredItem).delete()
+        session.query(MediaItemFileLink).delete()
+        session.query(MediaFile).delete()
+        session.query(MediaItem).delete()
+        session.query(Integration).delete()
+        integration = Integration(
+            source_type=SourceType.RADARR,
+            name="Radarr",
+            base_url="https://radarr.test",
+            api_key="key",
+            enabled=True,
+            timeout_seconds=10,
+            verify_tls=True,
+        )
+        session.add(integration)
+        session.flush()
+        item = MediaItem(
+            integration_id=integration.id,
+            source_type=SourceType.RADARR,
+            external_item_id="1",
+            media_type=MediaType.MOVIE,
+            title="Missing Movie",
+            monitored=True,
+            file_presence=True,
+        )
+        media_file = MediaFile(
+            integration_id=integration.id,
+            source_type=SourceType.RADARR,
+            external_file_id="2",
+            original_source_path="/data/movie.mkv",
+            scan_state=ScanState.CZECH_AUDIO_MISSING,
+            quality="Bluray-1080p",
+        )
+        session.add_all([item, media_file])
+        session.flush()
+        session.add(MediaItemFileLink(media_item_id=item.id, media_file_id=media_file.id))
+        session.commit()
+        return item.id, media_file.id
+
+
+def test_dashboard_stats_include_missing_audio() -> None:
+    reset_dashboard_data()
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/dashboard")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_movies"] == 1
+    assert payload["files_missing_czech_audio"] == 1
+
+
+def test_missing_audio_respects_ignored_filter() -> None:
+    item_id, _ = reset_dashboard_data()
+    with SessionLocal() as session:
+        session.add(IgnoredItem(object_type=IgnoredObjectType.MEDIA_ITEM, object_id=item_id))
+        session.commit()
+
+    with TestClient(create_app()) as client:
+        hidden = client.get("/api/v1/missing")
+        visible = client.get("/api/v1/missing?include_ignored=true")
+
+    assert hidden.json()["total"] == 0
+    assert visible.json()["total"] == 1
+
+
+def test_missing_csv_uses_utf8_bom() -> None:
+    reset_dashboard_data()
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/missing/export.csv")
+
+    assert response.status_code == 200
+    assert response.content.startswith("\ufeff".encode("utf-8"))
+    assert "Missing Movie" in response.text

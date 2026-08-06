@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
-from app.models.enums import MediaType, ScanState, SourceType
+from app.models.audio import AudioStream
+from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
+from app.models.ignored import IgnoredItem
 from app.models.media import MediaFile, MediaItem, MediaItemFileLink
 from app.repositories.media import MediaRepository
 from app.schemas.media import MediaFileSummary, MediaItemPage, MediaItemRead, SeriesSummary
@@ -133,6 +139,79 @@ def list_series(session: Session = Depends(get_session)) -> list[SeriesSummary]:
     return sorted(summaries, key=lambda item: item.title.lower())
 
 
+@router.get("/missing", response_model=MediaItemPage)
+def list_missing_czech_audio(
+    session: Session = Depends(get_session),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+    search: str | None = None,
+    include_ignored: bool = False,
+) -> MediaItemPage:
+    items = _missing_items(session, search=search, include_ignored=include_ignored)
+    offset = (page - 1) * page_size
+    return MediaItemPage(
+        items=[_serialize_item(item) for item in items[offset : offset + page_size]],
+        page=page,
+        page_size=page_size,
+        total=len(items),
+    )
+
+
+@router.get("/missing/export.csv")
+def export_missing_czech_audio(
+    session: Session = Depends(get_session),
+    search: str | None = None,
+    include_ignored: bool = False,
+) -> Response:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "media type",
+            "movie title",
+            "series title",
+            "season",
+            "episode",
+            "episode title",
+            "year",
+            "quality",
+            "detected languages",
+            "scan state",
+            "original path",
+            "mapped path",
+            "integration",
+            "last scan",
+        ]
+    )
+    for item in _missing_items(session, search=search, include_ignored=include_ignored):
+        media_file = _first_file(item)
+        languages = _audio_languages(session, media_file.id) if media_file else ""
+        writer.writerow(
+            [
+                item.media_type,
+                item.title if item.media_type == MediaType.MOVIE else "",
+                item.series_title or "",
+                item.season_number or "",
+                item.episode_number or "",
+                item.title if item.media_type == MediaType.EPISODE else "",
+                item.year or "",
+                media_file.quality if media_file else "",
+                languages,
+                media_file.scan_state if media_file else "",
+                media_file.original_source_path if media_file else "",
+                media_file.mapped_local_path if media_file else "",
+                item.integration_id,
+                media_file.last_scan_attempt if media_file else "",
+            ]
+        )
+    csv_body = "\ufeff" + output.getvalue()
+    return Response(
+        content=csv_body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="czecharr-missing-audio.csv"'},
+    )
+
+
 @router.post("/media-files/{media_file_id}/probe", response_model=MediaFileSummary)
 async def probe_media_file(
     media_file_id: int,
@@ -143,6 +222,42 @@ async def probe_media_file(
         return outcome.media_file
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/media-files/{media_file_id}", response_model=MediaFileSummary)
+def get_media_file(media_file_id: int, session: Session = Depends(get_session)) -> MediaFile:
+    media_file = session.get(MediaFile, media_file_id)
+    if media_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found.")
+    return media_file
+
+
+@router.get("/media-files/{media_file_id}/audio-streams")
+def list_audio_streams(
+    media_file_id: int, session: Session = Depends(get_session)
+) -> list[dict[str, object]]:
+    statement = (
+        select(AudioStream)
+        .where(AudioStream.media_file_id == media_file_id)
+        .order_by(AudioStream.stream_index)
+    )
+    return [
+        {
+            "id": stream.id,
+            "media_file_id": stream.media_file_id,
+            "stream_index": stream.stream_index,
+            "codec_name": stream.codec_name,
+            "channels": stream.channels,
+            "original_language": stream.original_language,
+            "normalized_language": stream.normalized_language,
+            "original_title": stream.original_title,
+            "normalized_title": stream.normalized_title,
+            "czech_match": stream.czech_match,
+            "match_reason": stream.match_reason,
+            "matched_value": stream.matched_value,
+        }
+        for stream in session.scalars(statement)
+    ]
 
 
 def _list_items(
@@ -239,3 +354,57 @@ def _first_file(item: MediaItem) -> MediaFile | None:
     if not item.file_links:
         return None
     return item.file_links[0].media_file
+
+
+def _missing_items(
+    session: Session,
+    *,
+    search: str | None,
+    include_ignored: bool,
+) -> list[MediaItem]:
+    ignored_item_ids = set()
+    ignored_file_ids = set()
+    if not include_ignored:
+        ignored_item_ids = {
+            item.object_id
+            for item in session.scalars(
+                select(IgnoredItem).where(IgnoredItem.object_type == IgnoredObjectType.MEDIA_ITEM)
+            )
+        }
+        ignored_file_ids = {
+            item.object_id
+            for item in session.scalars(
+                select(IgnoredItem).where(IgnoredItem.object_type == IgnoredObjectType.MEDIA_FILE)
+            )
+        }
+    statement = select(MediaItem).where(MediaItem.stale.is_(False)).order_by(MediaItem.title)
+    items = list(session.scalars(statement))
+    normalized_search = search.casefold().strip() if search else None
+    result: list[MediaItem] = []
+    for item in items:
+        media_file = _first_file(item)
+        if media_file is None or media_file.scan_state != ScanState.CZECH_AUDIO_MISSING:
+            continue
+        if item.id in ignored_item_ids or media_file.id in ignored_file_ids:
+            continue
+        if normalized_search:
+            haystack = " ".join(
+                value or ""
+                for value in [
+                    item.title,
+                    item.original_title,
+                    item.series_title,
+                    media_file.quality,
+                ]
+            ).casefold()
+            if normalized_search not in haystack:
+                continue
+        result.append(item)
+    return result
+
+
+def _audio_languages(session: Session, media_file_id: int) -> str:
+    statement = select(AudioStream.normalized_language).where(
+        AudioStream.media_file_id == media_file_id
+    )
+    return ", ".join(sorted({language for language in session.scalars(statement) if language}))

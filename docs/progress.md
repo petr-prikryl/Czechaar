@@ -64,15 +64,15 @@
 
 ## Stage 6: Main Web Interface
 
-- [ ] Dashboard
-- [ ] Missing Czech Audio page
-- [ ] Movies page and details
-- [ ] Series page and season expansion
-- [ ] Scan history page
-- [ ] Ignored items
-- [ ] CSV export
-- [ ] Responsive layout
-- [ ] Frontend tests
+- [x] Dashboard
+- [x] Missing Czech Audio page
+- [x] Movies page and details
+- [x] Series page and season expansion
+- [x] Scan history page
+- [x] Ignored items
+- [x] CSV export
+- [x] Responsive layout
+- [x] Frontend tests
 
 ## Stage 7: Production Docker Deployment
 
