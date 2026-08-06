@@ -23,13 +23,13 @@
 
 ## Stage 2: Integrations
 
-- [ ] Integration model
-- [ ] Radarr API client
-- [ ] Sonarr API client
-- [ ] Connection test endpoints
-- [ ] Secret-safe settings API
-- [ ] Settings UI
-- [ ] Mocked tests
+- [x] Integration model
+- [x] Radarr API client
+- [x] Sonarr API client
+- [x] Connection test endpoints
+- [x] Secret-safe settings API
+- [x] Settings UI
+- [x] Mocked tests
 
 ## Stage 3: Library Synchronization
 

@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
+import { IntegrationSettings } from "../features/integrations/IntegrationSettings";
 import { useI18n } from "../i18n/I18nProvider";
 
 export function SettingsPage() {
@@ -13,6 +14,8 @@ export function SettingsPage() {
         <h1 className="text-2xl font-semibold tracking-normal">{t("settings.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t("settings.subtitle")}</p>
       </div>
+      <IntegrationSettings />
+
       <Card className="space-y-3">
         <h2 className="text-base font-semibold">{t("common.language")}</h2>
         <div className="flex flex-wrap gap-2">
