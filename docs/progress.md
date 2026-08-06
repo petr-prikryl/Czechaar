@@ -33,13 +33,13 @@
 
 ## Stage 3: Library Synchronization
 
-- [ ] Radarr synchronization
-- [ ] Sonarr synchronization
-- [ ] Multi-episode file links
-- [ ] Stale records
-- [ ] Pagination and filters
-- [ ] Synchronization history
-- [ ] Tests
+- [x] Radarr synchronization
+- [x] Sonarr synchronization
+- [x] Multi-episode file links
+- [x] Stale records
+- [x] Pagination and filters
+- [x] Synchronization history
+- [x] Tests
 
 ## Stage 4: Path Safety and ffprobe
 

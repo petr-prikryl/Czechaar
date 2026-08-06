@@ -44,7 +44,7 @@ class ArrApiClient:
             return {}
         return {"X-Api-Key": api_key}
 
-    async def get_json(self, path: str) -> tuple[int, dict[str, Any] | None, str | None]:
+    async def get_api_json(self, path: str) -> tuple[int, Any | None, str | None]:
         url = f"{self.base_url}/api/v3/{path.lstrip('/')}"
         headers = self._headers()
         timeout = httpx.Timeout(self.timeout_seconds)
@@ -67,9 +67,23 @@ class ArrApiClient:
             payload = response.json()
         except ValueError:
             return response.status_code, None, "invalid_json"
-        if not isinstance(payload, dict):
-            return response.status_code, None, "invalid_json"
         return response.status_code, payload, None
+
+    async def get_json(self, path: str) -> tuple[int, dict[str, Any] | None, str | None]:
+        status_code, payload, error_code = await self.get_api_json(path)
+        if error_code:
+            return status_code, None, error_code
+        if not isinstance(payload, dict):
+            return status_code, None, "invalid_json"
+        return status_code, payload, None
+
+    async def get_list(self, path: str) -> list[dict[str, Any]]:
+        status_code, payload, error_code = await self.get_api_json(path)
+        if error_code:
+            raise ArrApiError(status_code=status_code, error_code=error_code)
+        if not isinstance(payload, list):
+            raise ArrApiError(status_code=status_code, error_code="invalid_json")
+        return [item for item in payload if isinstance(item, dict)]
 
     async def test_connection(self) -> IntegrationConnectionResult:
         if not self._resolved_api_key():
@@ -150,6 +164,25 @@ def _message_for_error(error_code: str | None) -> str:
 class RadarrClient(ArrApiClient):
     expected_source_type = SourceType.RADARR
 
+    async def list_movies(self) -> list[dict[str, Any]]:
+        return await self.get_list("movie")
+
 
 class SonarrClient(ArrApiClient):
     expected_source_type = SourceType.SONARR
+
+    async def list_series(self) -> list[dict[str, Any]]:
+        return await self.get_list("series")
+
+    async def list_episodes(self, series_id: int) -> list[dict[str, Any]]:
+        return await self.get_list(f"episode?seriesId={series_id}")
+
+    async def list_episode_files(self, series_id: int) -> list[dict[str, Any]]:
+        return await self.get_list(f"episodefile?seriesId={series_id}")
+
+
+class ArrApiError(RuntimeError):
+    def __init__(self, *, status_code: int | None, error_code: str) -> None:
+        super().__init__(f"Arr API request failed: {error_code}")
+        self.status_code = status_code
+        self.error_code = error_code
