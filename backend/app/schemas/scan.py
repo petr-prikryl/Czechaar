@@ -15,6 +15,8 @@ class ScanStartRequest(BaseModel):
     integration_id: int | None = Field(default=None, ge=1)
     media_item_id: int | None = Field(default=None, ge=1)
     media_file_id: int | None = Field(default=None, ge=1)
+    external_series_id: str | None = Field(default=None, min_length=1, max_length=80)
+    season_number: int | None = Field(default=None, ge=0)
     force: bool = False
 
 

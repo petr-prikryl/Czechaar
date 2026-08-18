@@ -136,6 +136,32 @@ class FfmpegRepairPlanRequest(BaseModel):
         return stripped
 
 
+class AudioMetadataUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    audio_stream_id: int = Field(ge=1)
+    language_code: str = Field(default="ces", min_length=2, max_length=8)
+    title: str = Field(default="\u010ce\u0161tina", min_length=1, max_length=120)
+
+    @field_validator("language_code")
+    @classmethod
+    def validate_language_code(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("Language code is required.")
+        if not normalized.isalnum():
+            raise ValueError("Language code must contain only letters and numbers.")
+        return normalized
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Title is required.")
+        return stripped
+
+
 class FfmpegRepairPlan(BaseModel):
     media_file_id: int
     audio_stream_id: int

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
+import os
 import re
 import shlex
 import unicodedata
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -20,8 +23,10 @@ from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
 from app.models.ignored import IgnoredItem
 from app.models.integration import Integration
 from app.models.media import MediaFile, MediaItem, MediaItemFileLink
+from app.models.path_mapping import AllowedMediaRoot
 from app.repositories.media import MediaRepository
 from app.schemas.media import (
+    AudioMetadataUpdateRequest,
     AudioStreamRead,
     FfmpegRepairPlan,
     FfmpegRepairPlanRequest,
@@ -31,7 +36,10 @@ from app.schemas.media import (
     SeasonSummary,
     SeriesSummary,
 )
+from app.services.czech_detection import detect_czech_audio, normalize_metadata
+from app.services.detection_settings import detection_config_from_settings, get_detection_settings
 from app.services.media_analysis import MediaAnalysisService
+from app.services.path_mapping import validate_allowed_media_root
 
 router = APIRouter(tags=["media"])
 
@@ -359,6 +367,81 @@ def list_audio_streams(
 
 
 @router.post(
+    "/media-files/{media_file_id}/audio-streams/czech-metadata",
+    response_model=MediaFileSummary,
+)
+async def set_czech_audio_metadata(
+    media_file_id: int,
+    payload: AudioMetadataUpdateRequest,
+    session: Session = Depends(get_session),
+) -> MediaFile:
+    settings = get_settings()
+    if not settings.metadata_edit_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Metadata editing is disabled. Set CZECHARR_METADATA_EDIT_ENABLED=true "
+                "to enable in-place MKV metadata updates."
+            ),
+        )
+
+    media_file = session.get(MediaFile, media_file_id)
+    if media_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found.")
+    stream = session.get(AudioStream, payload.audio_stream_id)
+    if stream is None or stream.media_file_id != media_file_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio stream not found.")
+    if not media_file.mapped_local_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media file does not have a mapped local path.",
+        )
+
+    media_path = _editable_media_path(session, media_file.mapped_local_path)
+    audio_ordinal = _audio_stream_ordinal(session, media_file_id, stream)
+    command = [
+        settings.mkvpropedit_path,
+        str(media_path),
+        "--edit",
+        f"track:a{audio_ordinal + 1}",
+        "--set",
+        f"language={payload.language_code}",
+        "--set",
+        f"name={payload.title}",
+    ]
+    await _run_mkvpropedit(command)
+
+    detection_settings = get_detection_settings(session)
+    detection = detect_czech_audio(
+        language=payload.language_code,
+        title=payload.title,
+        config=detection_config_from_settings(detection_settings),
+    )
+    stream.original_language = payload.language_code
+    stream.normalized_language = normalize_metadata(payload.language_code)
+    stream.original_title = payload.title
+    stream.normalized_title = normalize_metadata(payload.title)
+    stream.czech_match = detection.czech_match
+    stream.match_reason = detection.match_reason
+    stream.matched_value = detection.matched_value
+
+    now = datetime.now(UTC)
+    media_file.scan_state = (
+        ScanState.CZECH_AUDIO_FOUND if detection.czech_match else ScanState.CZECH_AUDIO_MISSING
+    )
+    media_file.czech_audio_result = detection.czech_match
+    media_file.error_code = None
+    media_file.sanitized_error_message = None
+    media_file.last_scan_attempt = now
+    if detection.czech_match:
+        media_file.last_successful_scan = now
+    session.add_all([stream, media_file])
+    session.commit()
+    session.refresh(media_file)
+    return media_file
+
+
+@router.post(
     "/media-files/{media_file_id}/ffmpeg-repair-plan",
     response_model=FfmpegRepairPlan,
 )
@@ -379,16 +462,7 @@ def create_ffmpeg_repair_plan(
             detail="Media file does not have a mapped local path.",
         )
 
-    streams = list(
-        session.scalars(
-            select(AudioStream)
-            .where(AudioStream.media_file_id == media_file_id)
-            .order_by(AudioStream.stream_index)
-        )
-    )
-    audio_ordinal = next(
-        index for index, candidate in enumerate(streams) if candidate.id == stream.id
-    )
+    audio_ordinal = _audio_stream_ordinal(session, media_file_id, stream)
     output_path = _repair_output_path(media_file)
     command = [
         "ffmpeg",
@@ -420,6 +494,76 @@ def create_ffmpeg_repair_plan(
             "directory when run inside the container."
         ),
     )
+
+
+def _editable_media_path(session: Session, mapped_path: str) -> Path:
+    roots = list(
+        session.scalars(select(AllowedMediaRoot).where(AllowedMediaRoot.enabled.is_(True)))
+    )
+    if not validate_allowed_media_root(mapped_path, roots):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Mapped path is outside allowed media roots.",
+        )
+
+    media_path = Path(mapped_path)
+    if not media_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media file does not exist.",
+        )
+    if not media_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Mapped path is not a file.",
+        )
+    if not os.access(media_path, os.W_OK):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media file is not writable by Czecharr.",
+        )
+    return media_path
+
+
+def _audio_stream_ordinal(session: Session, media_file_id: int, stream: AudioStream) -> int:
+    streams = list(
+        session.scalars(
+            select(AudioStream)
+            .where(AudioStream.media_file_id == media_file_id)
+            .order_by(AudioStream.stream_index)
+        )
+    )
+    try:
+        return next(index for index, candidate in enumerate(streams) if candidate.id == stream.id)
+    except StopIteration as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audio stream not found.",
+        ) from exc
+
+
+async def _run_mkvpropedit(command: list[str]) -> None:
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="mkvpropedit executable not found.",
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        output = (stderr or stdout)[:4000].decode("utf-8", errors="replace").strip()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=output or f"mkvpropedit exited with status {process.returncode}.",
+        )
 
 
 def _list_items(

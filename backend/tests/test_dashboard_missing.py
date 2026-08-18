@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+import app.api.v1.media as media_api
 from app.db.session import SessionLocal, initialize_database
 from app.main import create_app
 from app.models.audio import AudioStream
@@ -11,6 +14,7 @@ from app.models.enums import IgnoredObjectType, MediaType, ScanState, SourceType
 from app.models.ignored import IgnoredItem
 from app.models.integration import Integration
 from app.models.media import MediaFile, MediaItem, MediaItemFileLink
+from app.models.path_mapping import AllowedMediaRoot
 
 
 def reset_dashboard_data() -> tuple[int, int]:
@@ -204,6 +208,106 @@ def test_ffmpeg_repair_plan_is_generated_without_executing_ffmpeg() -> None:
     assert "language=cze" in payload["command"]
     assert "title=Čeština" in payload["command"]
     assert "does not execute" in payload["warning"]
+
+
+def test_czech_metadata_update_is_disabled_by_default(monkeypatch) -> None:
+    _, media_file_id = reset_dashboard_data()
+    with SessionLocal() as session:
+        stream = AudioStream(
+            media_file_id=media_file_id,
+            stream_index=2,
+            codec_name="aac",
+            czech_match=False,
+            match_reason="no_match",
+        )
+        session.add(stream)
+        session.commit()
+        stream_id = stream.id
+
+    monkeypatch.setattr(
+        media_api,
+        "get_settings",
+        lambda: SimpleNamespace(metadata_edit_enabled=False, mkvpropedit_path="mkvpropedit"),
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            f"/api/v1/media-files/{media_file_id}/audio-streams/czech-metadata",
+            json={"audio_stream_id": stream_id},
+        )
+
+    assert response.status_code == 403
+
+
+def test_czech_metadata_update_runs_mkvpropedit_and_marks_stream(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    media_path = tmp_path / "movie.mkv"
+    media_path.write_bytes(b"matroska")
+    _, media_file_id = reset_dashboard_data()
+    with SessionLocal() as session:
+        media_file = session.get(MediaFile, media_file_id)
+        assert media_file is not None
+        media_file.mapped_local_path = str(media_path)
+        stream = AudioStream(
+            media_file_id=media_file_id,
+            stream_index=2,
+            codec_name="aac",
+            original_language="und",
+            normalized_language="und",
+            czech_match=False,
+            match_reason="no_match",
+        )
+        session.add_all(
+            [
+                media_file,
+                stream,
+                AllowedMediaRoot(path=str(tmp_path), enabled=True),
+            ]
+        )
+        session.commit()
+        stream_id = stream.id
+
+    captured: dict[str, list[str]] = {}
+
+    async def fake_run_mkvpropedit(command: list[str]) -> None:
+        captured["command"] = command
+
+    monkeypatch.setattr(
+        media_api,
+        "get_settings",
+        lambda: SimpleNamespace(metadata_edit_enabled=True, mkvpropedit_path="mkvpropedit"),
+    )
+    monkeypatch.setattr(media_api, "_run_mkvpropedit", fake_run_mkvpropedit)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            f"/api/v1/media-files/{media_file_id}/audio-streams/czech-metadata",
+            json={"audio_stream_id": stream_id},
+        )
+
+    assert response.status_code == 200
+    assert captured["command"] == [
+        "mkvpropedit",
+        str(media_path),
+        "--edit",
+        "track:a1",
+        "--set",
+        "language=ces",
+        "--set",
+        "name=\u010ce\u0161tina",
+    ]
+    payload = response.json()
+    assert payload["scan_state"] == "czech_audio_found"
+    assert payload["czech_audio_result"] is True
+
+    with SessionLocal() as session:
+        stream = session.get(AudioStream, stream_id)
+        assert stream is not None
+        assert stream.original_language == "ces"
+        assert stream.original_title == "\u010ce\u0161tina"
+        assert stream.czech_match is True
 
 
 def test_missing_csv_uses_utf8_bom() -> None:

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     ffprobe_path: str = "ffprobe"
     ffprobe_timeout: int = 60
+    mkvpropedit_path: str = "mkvpropedit"
+    metadata_edit_enabled: bool = False
     scan_concurrency: int = 2
     scheduled_scan_enabled: bool = False
     scheduled_scan_interval_minutes: int = 1440

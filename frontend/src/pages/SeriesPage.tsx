@@ -1,14 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, ExternalLink, RotateCw } from "lucide-react";
 import { useState } from "react";
 
 import { getEpisodes, getSeries, getSeriesSeasons } from "../api/media";
+import { startMediaFileScan, startSeriesScan } from "../api/scans";
 import { StatusBadge } from "../components/StatusBadge";
+import { Button } from "../components/ui/Button";
 import { useI18n } from "../i18n/I18nProvider";
 import { formatEpisodeCode } from "../utils/format";
 
 export function SeriesPage() {
   const { t } = useI18n();
+  const queryClient = useQueryClient();
   const [expandedSeries, setExpandedSeries] = useState<{
     key: string;
     integrationId: number;
@@ -44,6 +47,21 @@ export function SeriesPage() {
       ),
     enabled: expandedSeries !== null && expandedSeason !== null,
   });
+  const invalidateSeriesViews = () => {
+    void queryClient.invalidateQueries({ queryKey: ["series"] });
+    void queryClient.invalidateQueries({ queryKey: ["series-seasons"] });
+    void queryClient.invalidateQueries({ queryKey: ["episodes"] });
+    void queryClient.invalidateQueries({ queryKey: ["missing"] });
+  };
+  const rescanSeriesMutation = useMutation({
+    mutationFn: (series: { integrationId: number; externalSeriesId: string }) =>
+      startSeriesScan(series.integrationId, series.externalSeriesId, true),
+    onSuccess: invalidateSeriesViews,
+  });
+  const rescanEpisodeMutation = useMutation({
+    mutationFn: (mediaFileId: number) => startMediaFileScan(mediaFileId, true),
+    onSuccess: invalidateSeriesViews,
+  });
 
   return (
     <div className="space-y-6">
@@ -62,34 +80,50 @@ export function SeriesPage() {
           const isSeriesExpanded = expandedSeries?.key === seriesKey;
           return (
             <section key={seriesKey} className="rounded-lg border border-border bg-background">
-              <button
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-                onClick={() => {
-                  setExpandedSeason(null);
-                  setExpandedSeries((current) =>
-                    current?.key === seriesKey
-                      ? null
-                      : {
-                          key: seriesKey,
-                          integrationId: series.integration_id,
-                          externalSeriesId: series.external_series_id,
-                        },
-                  );
-                }}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  {isSeriesExpanded ? (
-                    <ChevronDown aria-hidden="true" size={16} />
-                  ) : (
-                    <ChevronRight aria-hidden="true" size={16} />
-                  )}
-                  <span className="truncate font-medium">{series.title}</span>
-                </span>
+              <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <button
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => {
+                    setExpandedSeason(null);
+                    setExpandedSeries((current) =>
+                      current?.key === seriesKey
+                        ? null
+                        : {
+                            key: seriesKey,
+                            integrationId: series.integration_id,
+                            externalSeriesId: series.external_series_id,
+                          },
+                    );
+                  }}
+                >
+                  <span className="shrink-0">
+                    {isSeriesExpanded ? (
+                      <ChevronDown aria-hidden="true" size={16} />
+                    ) : (
+                      <ChevronRight aria-hidden="true" size={16} />
+                    )}
+                  </span>
+                  <span className="min-w-0 truncate font-medium">{series.title}</span>
+                </button>
                 <span className="flex items-center gap-3 text-sm text-muted-foreground">
                   {series.episode_count} {t("series.episodes")}
                   <StatusBadge status={series.errors > 0 ? "error" : "completed"} />
                 </span>
-              </button>
+                <Button
+                  className="h-8 px-2"
+                  disabled={rescanSeriesMutation.isPending}
+                  variant="secondary"
+                  onClick={() =>
+                    rescanSeriesMutation.mutate({
+                      integrationId: series.integration_id,
+                      externalSeriesId: series.external_series_id,
+                    })
+                  }
+                >
+                  <RotateCw aria-hidden="true" size={14} />
+                  {t("actions.rescan")}
+                </Button>
+              </div>
               {isSeriesExpanded ? (
                 <div className="space-y-2 border-t border-border p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -152,13 +186,28 @@ export function SeriesPage() {
                             {episodesQuery.data?.items.map((episode) => (
                               <div
                                 key={episode.id}
-                                className="grid gap-2 px-4 py-2 text-sm md:grid-cols-[90px_1fr_160px]"
+                                className="grid gap-2 px-4 py-2 text-sm md:grid-cols-[90px_1fr_160px_140px]"
                               >
                                 <span>
                                   {formatEpisodeCode(episode.season_number, episode.episode_number)}
                                 </span>
                                 <span>{episode.title}</span>
                                 <StatusBadge status={episode.media_file?.scan_state} />
+                                {episode.media_file ? (
+                                  <Button
+                                    className="h-8 justify-self-start px-2"
+                                    disabled={rescanEpisodeMutation.isPending}
+                                    variant="secondary"
+                                    onClick={() =>
+                                      rescanEpisodeMutation.mutate(episode.media_file!.id)
+                                    }
+                                  >
+                                    <RotateCw aria-hidden="true" size={14} />
+                                    {t("actions.rescan")}
+                                  </Button>
+                                ) : (
+                                  <span />
+                                )}
                               </div>
                             ))}
                             {episodesQuery.data?.items.length === 0 ? (

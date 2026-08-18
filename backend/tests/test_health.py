@@ -43,6 +43,8 @@ def test_runtime_settings_endpoint() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["ffprobe_path"] == "ffprobe"
+    assert payload["mkvpropedit_path"] == "mkvpropedit"
+    assert payload["metadata_edit_enabled"] is False
     assert payload["scan_concurrency"] >= 1
     assert payload["timezone"] == "Europe/Prague"
 

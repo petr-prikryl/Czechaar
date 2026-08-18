@@ -16,11 +16,17 @@ ffprobe -v error -select_streams a -show_entries stream=index,codec_name,codec_l
 
 Captured output is bounded, timeouts terminate the process, and failures are stored as explicit scan states instead of being treated as missing Czech audio.
 
-## Manual Metadata Repair Plans
+## Metadata Repair
 
-When a stream is clearly Czech but lacks usable stream metadata, the Missing Czech Audio diagnostics can generate an `ffmpeg` repair plan for that specific audio stream. Czecharr does not execute the command automatically and never edits files in the media mounts. The generated command remuxes a copy under `/config/repair` with `-c copy` and metadata such as `language=cze` and `title=Čeština`.
+When a stream is clearly Czech but lacks usable stream metadata, the Missing Czech Audio diagnostics can generate an `ffmpeg` repair plan for that specific audio stream. That repair plan is not executed automatically and does not edit files in the media mounts. The generated command remuxes a copy under `/config/repair` with `-c copy` and metadata such as `language=cze` and `title=Čeština`.
 
 Verify the generated copy manually before replacing any original file, then rescan the item in Radarr/Sonarr and Czecharr.
+
+If `CZECHARR_METADATA_EDIT_ENABLED=true` is set and the mapped media file is under an allowed media
+root and writable, diagnostics also show a direct metadata action for MKV files. That action runs
+`mkvpropedit` without a shell and updates the selected audio track in place with `language=ces` and
+`name=Čeština`. Leave this disabled and keep media mounts read-only unless in-place edits are
+intended.
 
 ## Czech Audio Detection
 
@@ -47,4 +53,4 @@ Successful scan results are reused only when the mapped local path, file size, m
 
 The scan engine persists scan runs and scan-run items, uses bounded concurrency, supports cancellation and marks interrupted runs during startup recovery. Scheduled scans are disabled by default and are run through the same scan history path.
 
-Runtime scanning settings such as `CZECHARR_FFPROBE_PATH`, `CZECHARR_FFPROBE_TIMEOUT`, `CZECHARR_SCAN_CONCURRENCY`, scheduler interval, stale-record retention and timezone are environment-controlled and visible in Settings.
+Runtime scanning settings such as `CZECHARR_FFPROBE_PATH`, `CZECHARR_FFPROBE_TIMEOUT`, `CZECHARR_MKVPROPEDIT_PATH`, `CZECHARR_METADATA_EDIT_ENABLED`, `CZECHARR_SCAN_CONCURRENCY`, scheduler interval, stale-record retention and timezone are environment-controlled and visible in Settings.

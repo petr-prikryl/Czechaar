@@ -42,12 +42,16 @@ class ScanEngine:
         integration_id = request.integration_id
         media_item_id = request.media_item_id
         media_file_id = request.media_file_id
+        external_series_id = request.external_series_id
+        season_number = request.season_number
         file_ids = self._select_media_file_ids(
             scan_type=scan_type,
             source_type=source_type,
             integration_id=integration_id,
             media_item_id=media_item_id,
             media_file_id=media_file_id,
+            external_series_id=external_series_id,
+            season_number=season_number,
         )
         run = ScanRun(
             scan_type=scan_type,
@@ -72,6 +76,8 @@ class ScanEngine:
         integration_id: int | None,
         media_item_id: int | None,
         media_file_id: int | None,
+        external_series_id: str | None,
+        season_number: int | None,
     ) -> list[int]:
         if scan_type == ScanType.MEDIA_FILE:
             return [media_file_id] if media_file_id is not None else []
@@ -101,6 +107,27 @@ class ScanEngine:
                 statement.join(MediaItemFileLink, MediaItemFileLink.media_file_id == MediaFile.id)
                 .join(MediaItem, MediaItem.id == MediaItemFileLink.media_item_id)
                 .where(MediaItem.media_type == MediaType.EPISODE)
+            )
+        if scan_type == ScanType.SERIES:
+            if integration_id is None or external_series_id is None:
+                return []
+            statement = (
+                statement.join(MediaItemFileLink, MediaItemFileLink.media_file_id == MediaFile.id)
+                .join(MediaItem, MediaItem.id == MediaItemFileLink.media_item_id)
+                .where(MediaItem.media_type == MediaType.EPISODE)
+                .where(MediaItem.integration_id == integration_id)
+                .where(MediaItem.external_series_id == external_series_id)
+            )
+        if scan_type == ScanType.SEASON:
+            if integration_id is None or external_series_id is None or season_number is None:
+                return []
+            statement = (
+                statement.join(MediaItemFileLink, MediaItemFileLink.media_file_id == MediaFile.id)
+                .join(MediaItem, MediaItem.id == MediaItemFileLink.media_item_id)
+                .where(MediaItem.media_type == MediaType.EPISODE)
+                .where(MediaItem.integration_id == integration_id)
+                .where(MediaItem.external_series_id == external_series_id)
+                .where(MediaItem.season_number == season_number)
             )
         if scan_type == ScanType.FULL:
             statement = statement.where(

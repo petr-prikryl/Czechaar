@@ -13,6 +13,7 @@ The application synchronizes Radarr and Sonarr metadata, maps remote library pat
 - Audio-stream inspection with `ffprobe` and Czech-audio detection from stream metadata.
 - Persistent scan runs, cancellation, cache reuse and scan history.
 - Missing-audio diagnostics with safe manual `ffmpeg` repair-plan generation for stream metadata.
+- Optional in-place MKV audio metadata updates through `mkvpropedit`, disabled by default.
 - Responsive Czech/English web interface for dashboards, missing audio, movies, series, settings and scan history.
 - One production Docker container serving both the frontend and backend on port `8080`.
 
@@ -63,6 +64,8 @@ CZECHARR_PORT=8080
 CZECHARR_LOG_LEVEL=INFO
 CZECHARR_FFPROBE_PATH=ffprobe
 CZECHARR_FFPROBE_TIMEOUT=60
+CZECHARR_MKVPROPEDIT_PATH=mkvpropedit
+CZECHARR_METADATA_EDIT_ENABLED=false
 CZECHARR_SCAN_CONCURRENCY=2
 CZECHARR_STALE_RETENTION_DAYS=30
 ```
@@ -93,6 +96,16 @@ Czecharr intentionally does not implement user authentication. Deploy it only be
 The `/config` directory stores persistent state, including the SQLite database. Protect it with appropriate filesystem permissions, keep it writable by the Czecharr container and include it in backups.
 
 Back up `/config` before major upgrades. Do not expose Czecharr directly to the internet.
+
+## Optional Metadata Editing
+
+Czecharr is read-only by default. The diagnostics view can show a **Set Czech** action for
+MKV audio streams, but only when `CZECHARR_METADATA_EDIT_ENABLED=true` is configured. That action
+runs `mkvpropedit` in place and sets the selected audio track to `language=ces` and `name=Čeština`.
+
+Keep media mounts read-only unless you intentionally enable this feature. When enabling it, mount
+only the required media paths read-write and make sure the container runtime user can write those
+files. The production image includes `mkvpropedit` via `mkvtoolnix`.
 
 ## Backup and Restore
 

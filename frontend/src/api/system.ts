@@ -12,6 +12,8 @@ export type VersionInfo = {
 export type RuntimeSettings = {
   ffprobe_path: string;
   ffprobe_timeout: number;
+  mkvpropedit_path: string;
+  metadata_edit_enabled: boolean;
   scan_concurrency: number;
   scheduled_scan_enabled: boolean;
   scheduled_scan_interval_minutes: number;

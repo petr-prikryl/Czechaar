@@ -7,7 +7,7 @@ import pytest
 from app.db.session import SessionLocal, initialize_database
 from app.models.enums import ScanRunStatus, ScanType, SourceType
 from app.models.integration import Integration
-from app.models.media import MediaFile
+from app.models.media import MediaFile, MediaItem, MediaItemFileLink
 from app.models.scan import ScanRun, ScanRunItem
 from app.schemas.scan import ScanStartRequest
 from app.services.scan_engine import ScanEngine, recover_interrupted_scans, scan_runner
@@ -18,6 +18,8 @@ def reset_scans() -> None:
     with SessionLocal() as session:
         session.query(ScanRunItem).delete()
         session.query(ScanRun).delete()
+        session.query(MediaItemFileLink).delete()
+        session.query(MediaItem).delete()
         session.query(MediaFile).delete()
         session.query(Integration).delete()
         session.commit()
@@ -63,6 +65,84 @@ def test_scan_creation_persists_run_and_items() -> None:
         assert file_ids == [media_file_id]
         assert force is True
         assert session.query(ScanRunItem).count() == 1
+
+
+def test_series_scan_selects_only_matching_series_files() -> None:
+    reset_scans()
+    with SessionLocal() as session:
+        integration = Integration(
+            source_type=SourceType.SONARR,
+            name="Sonarr",
+            base_url="https://sonarr.test",
+            api_key="key",
+            enabled=True,
+            timeout_seconds=10,
+            verify_tls=True,
+        )
+        session.add(integration)
+        session.flush()
+        matching_file = MediaFile(
+            integration_id=integration.id,
+            source_type=SourceType.SONARR,
+            external_file_id="100",
+            original_source_path="/tv/demo/s01e01.mkv",
+        )
+        other_file = MediaFile(
+            integration_id=integration.id,
+            source_type=SourceType.SONARR,
+            external_file_id="200",
+            original_source_path="/tv/other/s01e01.mkv",
+        )
+        session.add_all([matching_file, other_file])
+        session.flush()
+        matching_episode = MediaItem(
+            integration_id=integration.id,
+            source_type=SourceType.SONARR,
+            external_item_id="101",
+            external_series_id="7",
+            media_type="episode",
+            title="Part One",
+            monitored=True,
+            file_presence=True,
+        )
+        other_episode = MediaItem(
+            integration_id=integration.id,
+            source_type=SourceType.SONARR,
+            external_item_id="201",
+            external_series_id="8",
+            media_type="episode",
+            title="Other",
+            monitored=True,
+            file_presence=True,
+        )
+        session.add_all([matching_episode, other_episode])
+        session.flush()
+        session.add_all(
+            [
+                MediaItemFileLink(
+                    media_item_id=matching_episode.id,
+                    media_file_id=matching_file.id,
+                ),
+                MediaItemFileLink(media_item_id=other_episode.id, media_file_id=other_file.id),
+            ]
+        )
+        session.commit()
+        integration_id = integration.id
+        matching_file_id = matching_file.id
+
+    with SessionLocal() as session:
+        run, file_ids, _ = ScanEngine(session).create_scan(
+            ScanStartRequest(
+                scan_type=ScanType.SERIES,
+                integration_id=integration_id,
+                external_series_id="7",
+                force=True,
+            ),
+            force=True,
+        )
+
+        assert run.requested_item_count == 1
+        assert file_ids == [matching_file_id]
 
 
 @pytest.mark.asyncio

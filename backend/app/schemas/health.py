@@ -32,6 +32,8 @@ class RuntimeSettingsResponse(BaseModel):
 
     ffprobe_path: str
     ffprobe_timeout: int
+    mkvpropedit_path: str
+    metadata_edit_enabled: bool
     scan_concurrency: int
     scheduled_scan_enabled: bool
     scheduled_scan_interval_minutes: int

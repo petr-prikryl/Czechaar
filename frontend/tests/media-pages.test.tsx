@@ -133,8 +133,38 @@ function mockApi(scanHistory = defaultScanHistory) {
         ),
       );
     }
+    if (url.startsWith("/api/v1/runtime-settings")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            ffprobe_path: "ffprobe",
+            ffprobe_timeout: 60,
+            mkvpropedit_path: "mkvpropedit",
+            metadata_edit_enabled: true,
+            scan_concurrency: 2,
+            scheduled_scan_enabled: false,
+            scheduled_scan_interval_minutes: 1440,
+            stale_retention_days: 30,
+            timezone: "Europe/Prague",
+          }),
+          { status: 200 },
+        ),
+      );
+    }
     if (url.startsWith("/api/v1/missing")) {
       return Promise.resolve(new Response(JSON.stringify(mediaPage), { status: 200 }));
+    }
+    if (url.startsWith("/api/v1/media-files/2/audio-streams/czech-metadata")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            ...mediaPage.items[0].media_file,
+            scan_state: "czech_audio_found",
+            czech_audio_result: true,
+          }),
+          { status: 200 },
+        ),
+      );
     }
     if (url.startsWith("/api/v1/media-files/2/audio-streams")) {
       return Promise.resolve(
@@ -332,6 +362,23 @@ describe("media pages", () => {
     );
   });
 
+  it("sets Czech metadata from missing audio diagnostics", async () => {
+    const fetchMock = mockApi();
+    renderPage(<MissingAudioPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Důvod/ }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Nastavit \u010de\u0161tinu/ }),
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/media-files/2/audio-streams/czech-metadata",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
   it("renders the movie table", async () => {
     mockApi();
     renderPage(<MoviesPage />);
@@ -349,6 +396,29 @@ describe("media pages", () => {
 
     expect(await screen.findByText("S01E02")).toBeInTheDocument();
     expect(screen.getByText("Part One")).toBeInTheDocument();
+  });
+
+  it("starts a scan for one series", async () => {
+    const fetchMock = mockApi();
+    renderPage(<SeriesPage />);
+
+    await screen.findByText("Demo Show");
+    await userEvent.click(screen.getByRole("button", { name: /Skenovat znovu/ }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/scans",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const scanCall = fetchMock.mock.calls.find(([input]) => input === "/api/v1/scans");
+    expect(scanCall).toBeDefined();
+    expect(JSON.parse(String(scanCall?.[1]?.body))).toMatchObject({
+      scan_type: "series",
+      integration_id: 1,
+      external_series_id: "7",
+      force: true,
+    });
   });
 
   it("renders active scan progress", async () => {

@@ -42,6 +42,8 @@ def runtime_settings() -> RuntimeSettingsResponse:
     return RuntimeSettingsResponse(
         ffprobe_path=settings.ffprobe_path,
         ffprobe_timeout=settings.ffprobe_timeout,
+        mkvpropedit_path=settings.mkvpropedit_path,
+        metadata_edit_enabled=settings.metadata_edit_enabled,
         scan_concurrency=settings.scan_concurrency,
         scheduled_scan_enabled=settings.scheduled_scan_enabled,
         scheduled_scan_interval_minutes=settings.scheduled_scan_interval_minutes,

@@ -173,3 +173,17 @@ export function createFfmpegRepairPlan(mediaFileId: number, audioStreamId: numbe
     },
   });
 }
+
+export function setCzechAudioMetadata(mediaFileId: number, audioStreamId: number) {
+  return apiRequest<MediaFileSummary>(
+    `/api/v1/media-files/${mediaFileId}/audio-streams/czech-metadata`,
+    {
+      method: "POST",
+      body: {
+        audio_stream_id: audioStreamId,
+        language_code: "ces",
+        title: "\u010ce\u0161tina",
+      },
+    },
+  );
+}

@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   Info,
+  Languages,
   RotateCw,
   Search,
   ShieldOff,
@@ -19,11 +20,13 @@ import {
   createFfmpegRepairPlan,
   getAudioStreams,
   getMissingAudio,
+  setCzechAudioMetadata,
   type FfmpegRepairPlan,
   type MediaFileSummary,
   type MediaItem,
 } from "../api/media";
 import { startMediaFileScan } from "../api/scans";
+import { getRuntimeSettings } from "../api/system";
 import { StatusBadge } from "../components/StatusBadge";
 import { Button } from "../components/ui/Button";
 import { useI18n } from "../i18n/I18nProvider";
@@ -295,6 +298,7 @@ function MissingAudioDetails({
   sourceType: MediaItem["source_type"];
 }) {
   const { t } = useI18n();
+  const queryClient = useQueryClient();
   const [repairPlan, setRepairPlan] = useState<FfmpegRepairPlan | null>(null);
   const repairMutation = useMutation({
     mutationFn: (audioStreamId: number) => {
@@ -304,6 +308,30 @@ function MissingAudioDetails({
       return createFfmpegRepairPlan(file.id, audioStreamId);
     },
     onSuccess: setRepairPlan,
+  });
+  const metadataSettingsQuery = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: ({ signal }) => getRuntimeSettings(signal),
+    staleTime: 60_000,
+  });
+  const metadataMutation = useMutation({
+    mutationFn: (audioStreamId: number) => {
+      if (!file) {
+        throw new Error("Media file is not available.");
+      }
+      return setCzechAudioMetadata(file.id, audioStreamId);
+    },
+    onSuccess: () => {
+      if (!file) {
+        return;
+      }
+      setRepairPlan(null);
+      void queryClient.invalidateQueries({ queryKey: ["audio-streams", file.id] });
+      void queryClient.invalidateQueries({ queryKey: ["missing"] });
+      void queryClient.invalidateQueries({ queryKey: ["movies"] });
+      void queryClient.invalidateQueries({ queryKey: ["series"] });
+      void queryClient.invalidateQueries({ queryKey: ["episodes"] });
+    },
   });
   const streamsQuery = useQuery({
     queryKey: ["audio-streams", file?.id],
@@ -320,6 +348,7 @@ function MissingAudioDetails({
       ? `${t("missing.errorReason")}: ${file.error_code}`
       : t("missing.noCzechStreamMatch");
   const activeRepairPlan = repairPlan?.media_file_id === file.id ? repairPlan : null;
+  const metadataEditEnabled = metadataSettingsQuery.data?.metadata_edit_enabled === true;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,1.3fr)]">
@@ -394,14 +423,28 @@ function MissingAudioDetails({
                     <td className="px-2 py-2">{stream.channels ?? "-"}</td>
                     <td className="px-2 py-2">{stream.match_reason}</td>
                     <td className="px-2 py-2">
-                      <Button
-                        className="h-8 px-2"
-                        variant="secondary"
-                        onClick={() => repairMutation.mutate(stream.id)}
-                      >
-                        <Wrench aria-hidden="true" size={14} />
-                        {t("actions.repairMetadata")}
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {metadataEditEnabled ? (
+                          <Button
+                            className="h-8 px-2"
+                            disabled={metadataMutation.isPending}
+                            variant="secondary"
+                            onClick={() => metadataMutation.mutate(stream.id)}
+                          >
+                            <Languages aria-hidden="true" size={14} />
+                            {t("actions.setCzechMetadata")}
+                          </Button>
+                        ) : null}
+                        <Button
+                          className="h-8 px-2"
+                          disabled={repairMutation.isPending}
+                          variant="secondary"
+                          onClick={() => repairMutation.mutate(stream.id)}
+                        >
+                          <Wrench aria-hidden="true" size={14} />
+                          {t("actions.repairMetadata")}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -412,6 +455,11 @@ function MissingAudioDetails({
         {repairMutation.isError ? (
           <p className="text-sm text-rose-700 dark:text-rose-300">
             {t("common.error")}: {repairMutation.error.message}
+          </p>
+        ) : null}
+        {metadataMutation.isError ? (
+          <p className="text-sm text-rose-700 dark:text-rose-300">
+            {t("common.error")}: {metadataMutation.error.message}
           </p>
         ) : null}
         {activeRepairPlan ? (

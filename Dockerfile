@@ -31,6 +31,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CZECHARR_LOG_LEVEL=INFO \
     CZECHARR_FFPROBE_PATH=ffprobe \
     CZECHARR_FFPROBE_TIMEOUT=60 \
+    CZECHARR_MKVPROPEDIT_PATH=mkvpropedit \
+    CZECHARR_METADATA_EDIT_ENABLED=false \
     CZECHARR_SCAN_CONCURRENCY=2 \
     CZECHARR_STALE_RETENTION_DAYS=30 \
     CZECHARR_STATIC_DIR=/app/frontend/dist \
@@ -45,7 +47,7 @@ LABEL org.opencontainers.image.title="Czecharr" \
     org.opencontainers.image.created="${CZECHARR_BUILD_DATE}"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg gosu \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg gosu mkvtoolnix \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system czecharr \

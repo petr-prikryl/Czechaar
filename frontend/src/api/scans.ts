@@ -27,6 +27,18 @@ export function startMediaFileScan(mediaFileId: number, force = true) {
   });
 }
 
+export function startSeriesScan(integrationId: number, externalSeriesId: string, force = true) {
+  return apiRequest<ScanRun>("/api/v1/scans", {
+    method: "POST",
+    body: {
+      scan_type: "series",
+      integration_id: integrationId,
+      external_series_id: externalSeriesId,
+      force,
+    },
+  });
+}
+
 export function startFullScan(force = false) {
   return apiRequest<ScanRun>("/api/v1/scans", {
     method: "POST",
