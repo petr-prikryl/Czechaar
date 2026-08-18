@@ -613,14 +613,21 @@ def _integration_map(session: Session, items: list[MediaItem]) -> dict[int, Inte
 
 def _item_external_web_path(item: MediaItem) -> str | None:
     if item.media_type == MediaType.MOVIE and item.source_type == SourceType.RADARR:
-        if item.external_web_path and _is_numeric_movie_web_path(item.external_web_path):
-            return item.external_web_path
-        return _derived_item_web_path(item)
+        tmdb_path = _web_path("movie", item.external_tmdb_id)
+        if tmdb_path:
+            return tmdb_path
+        stored_movie_id = _numeric_movie_web_path_value(item.external_web_path)
+        if stored_movie_id and stored_movie_id != item.external_item_id:
+            return _web_path("movie", stored_movie_id)
+        return None
     return item.external_web_path or _derived_item_web_path(item)
 
 
-def _is_numeric_movie_web_path(value: str) -> bool:
-    return re.fullmatch(r"/?movie/\d+/?", value.strip()) is not None
+def _numeric_movie_web_path_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    match = re.fullmatch(r"/?movie/(\d+)/?", value.strip())
+    return match.group(1) if match else None
 
 
 def _source_web_url(base_url: str | None, external_web_path: str | None) -> str | None:
@@ -647,6 +654,8 @@ def _derived_web_path(section: str, title: str) -> str | None:
 
 
 def _web_path(section: str, value: object) -> str | None:
+    if value is None:
+        return None
     text = str(value).strip()
     if not text:
         return None

@@ -86,6 +86,8 @@ async def test_radarr_sync_imports_movie_and_file() -> None:
         movie = session.query(MediaItem).one()
         media_file = session.query(MediaFile).one()
         assert movie.media_type == MediaType.MOVIE
+        assert movie.external_item_id == "10"
+        assert movie.external_tmdb_id == "1273002"
         assert movie.title == "Avatar"
         assert movie.external_web_path == "/movie/1273002"
         assert media_file.quality == "Bluray-1080p"
@@ -164,3 +166,66 @@ async def test_sonarr_sync_links_multi_episode_file() -> None:
         assert session.query(MediaItem).count() == 2
         assert session.query(MediaFile).count() == 1
         assert session.query(MediaItemFileLink).count() == 2
+
+
+@pytest.mark.asyncio
+async def test_sonarr_sync_links_episode_files_by_episode_ids() -> None:
+    reset_library()
+    integration = add_integration(SourceType.SONARR)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/series"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 7,
+                        "title": "Demo Show",
+                        "year": 2020,
+                        "monitored": True,
+                    }
+                ],
+            )
+        if request.url.path.endswith("/episodefile"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 99,
+                        "path": "/data/tv/Demo Show/S01E01.mkv",
+                        "relativePath": "S01E01.mkv",
+                        "size": 4567,
+                        "quality": {"quality": {"name": "WEBRip-1080p"}},
+                        "episodeIds": [101],
+                    }
+                ],
+            )
+        if request.url.path.endswith("/episode"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 101,
+                        "title": "Part One",
+                        "seasonNumber": 1,
+                        "episodeNumber": 1,
+                        "monitored": True,
+                        "hasFile": True,
+                    },
+                ],
+            )
+        return httpx.Response(404)
+
+    with SessionLocal() as session:
+        run = await LibrarySyncService(
+            session,
+            transports={integration.id: httpx.MockTransport(handler)},
+        ).synchronize(integration_id=integration.id)
+
+        assert run.items_total == 1
+        assert run.files_total == 1
+        episode = session.query(MediaItem).one()
+        media_file = session.query(MediaFile).one()
+        assert episode.file_presence is True
+        assert media_file.quality == "WEBRip-1080p"
+        assert session.query(MediaItemFileLink).count() == 1

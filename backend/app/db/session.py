@@ -62,6 +62,10 @@ def _ensure_sqlite_compatibility_schema() -> None:
                 connection.execute(
                     text("ALTER TABLE media_items ADD COLUMN external_web_path VARCHAR(500)")
                 )
+            if "external_tmdb_id" not in columns:
+                connection.execute(
+                    text("ALTER TABLE media_items ADD COLUMN external_tmdb_id VARCHAR(80)")
+                )
             connection.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_media_items_series_season "

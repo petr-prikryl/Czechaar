@@ -37,7 +37,8 @@ def reset_dashboard_data() -> tuple[int, int]:
         item = MediaItem(
             integration_id=integration.id,
             source_type=SourceType.RADARR,
-            external_item_id="1273002",
+            external_item_id="163",
+            external_tmdb_id="1273002",
             external_web_path="/movie/1273002",
             media_type=MediaType.MOVIE,
             title="Missing Movie",
@@ -97,13 +98,30 @@ def test_missing_audio_is_paginated_and_includes_source_web_url() -> None:
     assert payload["items"][0]["source_web_url"] == "https://radarr-web.test/movie/1273002"
 
 
-def test_missing_audio_derives_radarr_url_from_external_id_when_web_path_is_missing() -> None:
+def test_missing_audio_derives_radarr_url_from_tmdb_id_when_web_path_is_missing() -> None:
     item_id, _ = reset_dashboard_data()
     with SessionLocal() as session:
         item = session.get(MediaItem, item_id)
         assert item is not None
         item.external_web_path = None
         item.year = 2024
+        session.add(item)
+        session.commit()
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/missing?page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["source_web_url"] == "https://radarr-web.test/movie/1273002"
+
+
+def test_missing_audio_ignores_legacy_radarr_internal_id_web_path() -> None:
+    item_id, _ = reset_dashboard_data()
+    with SessionLocal() as session:
+        item = session.get(MediaItem, item_id)
+        assert item is not None
+        item.external_web_path = "/movie/163"
         session.add(item)
         session.commit()
 
@@ -130,6 +148,24 @@ def test_missing_audio_ignores_legacy_radarr_title_slug_web_path() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["items"][0]["source_web_url"] == "https://radarr-web.test/movie/1273002"
+
+
+def test_missing_audio_does_not_fall_back_to_radarr_internal_movie_id() -> None:
+    item_id, _ = reset_dashboard_data()
+    with SessionLocal() as session:
+        item = session.get(MediaItem, item_id)
+        assert item is not None
+        item.external_tmdb_id = None
+        item.external_web_path = "/movie/163"
+        session.add(item)
+        session.commit()
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/missing?page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["source_web_url"] is None
 
 
 def test_ffmpeg_repair_plan_is_generated_without_executing_ffmpeg() -> None:

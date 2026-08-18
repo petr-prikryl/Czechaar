@@ -36,6 +36,7 @@ class MediaItem(Base):
     source_type: Mapped[SourceType] = mapped_column(String(20), index=True, nullable=False)
     external_item_id: Mapped[str] = mapped_column(String(80), nullable=False)
     external_series_id: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    external_tmdb_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     external_web_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     media_type: Mapped[MediaType] = mapped_column(String(20), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)

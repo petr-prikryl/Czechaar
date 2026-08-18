@@ -106,7 +106,7 @@ Create an API key in each Arr application and enter it in Czecharr Settings. Cze
 
 Use **Base URL** for the API endpoint Czecharr should call. Use **Web URL** when the browser should open a different public Radarr/Sonarr host from the Czecharr UI. For example, the API can use `https://prxrdr.prikryl.cc` while Web URL points to `https://radarr.prikryl.cc`; Sonarr can be configured the same way with its own public host.
 
-Open-in-Radarr and Open-in-Sonarr actions target the imported movie or series detail page. Radarr movie links use the imported TMDb ID path, for example `/movie/1273002`; Sonarr series links use the series path reported by Sonarr. Run a library synchronization after changing Web URL settings so Czecharr refreshes stored Arr web paths for existing records.
+Open-in-Radarr and Open-in-Sonarr actions target the imported movie or series detail page. Radarr movie links use the imported TMDb ID path, for example `/movie/1273002`; Sonarr series links use the series path reported by Sonarr. Run a library synchronization after changing Web URL settings or after upgrading from an older Czecharr version so Czecharr refreshes stored Arr web paths for existing records.
 
 ## Known Limitations
 

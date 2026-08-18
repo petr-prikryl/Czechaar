@@ -126,16 +126,17 @@ class LibrarySyncService:
             files_by_id = {
                 str(file_payload.get("id")): file_payload for file_payload in file_payloads
             }
+            files_by_episode_id = _sonarr_files_by_episode_id(file_payloads)
             for episode in await client.list_episodes(series_id):
                 item = self._upsert_sonarr_episode(integration, series, episode)
                 seen_items.add(item.external_item_id)
                 episode_file_id = episode.get("episodeFileId")
-                if episode_file_id is None:
-                    continue
-                file_payload = _as_dict(episode.get("episodeFile")) or files_by_id.get(
-                    str(episode_file_id)
-                )
-                if not file_payload:
+                file_payload = _as_dict(episode.get("episodeFile"))
+                if file_payload is None and episode_file_id is not None:
+                    file_payload = files_by_id.get(str(episode_file_id))
+                if file_payload is None:
+                    file_payload = files_by_episode_id.get(str(episode.get("id")))
+                if file_payload is None:
                     continue
                 media_file = self._upsert_sonarr_file(integration, file_payload)
                 seen_files.add(media_file.external_file_id)
@@ -159,6 +160,7 @@ class LibrarySyncService:
         )
         item.title = str(movie.get("title") or movie.get("originalTitle") or "Untitled movie")
         item.original_title = _optional_str(movie.get("originalTitle"))
+        item.external_tmdb_id = _radarr_movie_tmdb_id(movie)
         item.external_web_path = _radarr_movie_web_path(movie)
         item.year = _optional_int(movie.get("year"))
         item.monitored = bool(movie.get("monitored", True))
@@ -279,6 +281,20 @@ def _as_dict(value: Any) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _sonarr_files_by_episode_id(
+    file_payloads: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    files_by_episode_id: dict[str, dict[str, Any]] = {}
+    for file_payload in file_payloads:
+        episode_ids = file_payload.get("episodeIds")
+        if not isinstance(episode_ids, list):
+            continue
+        for episode_id in episode_ids:
+            if episode_id is not None:
+                files_by_episode_id[str(episode_id)] = file_payload
+    return files_by_episode_id
+
+
 def _optional_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -334,5 +350,9 @@ def _web_path(section: str, slug_value: Any) -> str | None:
     return f"/{section}/{quote(slug, safe='')}"
 
 
+def _radarr_movie_tmdb_id(movie: dict[str, Any]) -> str | None:
+    return _optional_str(movie.get("tmdbId"))
+
+
 def _radarr_movie_web_path(movie: dict[str, Any]) -> str | None:
-    return _web_path("movie", movie.get("tmdbId") or movie.get("id"))
+    return _web_path("movie", _radarr_movie_tmdb_id(movie))
